@@ -1,12 +1,13 @@
-#include <DGtal/base/Common.h>
-
 #include <utility>
+
+#include "DGtal/base/Common.h"
 #include "DGtal/geometry/meshes/NormalCycleComputer.h"
-#include "DGtal/shapes/SurfaceMeshHelper.h"
+#include "DGtal/helpers/ShortcutsGeometry.h"
 #include "DGtal/io/writers/SurfaceMeshWriter.h"
 #include "DGtal/io/colormaps/GradientColorMap.h"
 #include "DGtal/io/colormaps/QuantifiedColorMap.h"
-#include "DGtal/helpers/ShortcutsGeometry.h"
+#include "DGtal/shapes/SurfaceMeshHelper.h"
+
 #include "polyscope/polyscope.h"
 #include "polyscope/surface_mesh.h"
 
@@ -99,7 +100,8 @@ void paper2022Checks() {
 
 }
 
-PolyMesh* registerSurface(const CountedPtr<SH3::SurfaceMesh>& primalSurface, std::string name) {
+PolyMesh* registerSurface(const CountedPtr<SH3::DigitalSurface>& surface, std::string name) {
+    auto primalSurface = SH3::makePrimalSurfaceMesh(surface);
     std::vector<std::vector<size_t>> faces;
     std::vector<Z3i::RealPoint> positions;
 
@@ -110,14 +112,16 @@ PolyMesh* registerSurface(const CountedPtr<SH3::SurfaceMesh>& primalSurface, std
     return polyscope::registerSurfaceMesh(std::move(name), positions, faces);
 }
 
-PolyMesh* registerDual(const CountedPtr<SH3::SurfaceMesh>& primalSurface, std::string name) {
-    std::vector<std::vector<size_t>> faces;
-    std::vector<Z3i::RealPoint> positions;
+PolyMesh* registerDual(const CountedPtr<SH3::DigitalSurface>& surface, std::string name) {
 
-    for (auto f = 0; f < primalSurface->nbFaces(); ++f) {
-        faces.push_back(primalSurface->incidentVertices(f));
+    auto dualSurface = SH3::makeDualPolygonalSurface(surface);
+
+    std::vector<std::vector<size_t>> faces;
+
+    for (auto f = 0; f < dualSurface->nbFaces(); ++f) {
+        faces.push_back(dualSurface->verticesAroundFace(f));
     }
-    positions = primalSurface->positions();
+    auto positions = dualSurface->positions();
     return polyscope::registerSurfaceMesh(std::move(name), positions, faces);
 }
 
@@ -131,10 +135,9 @@ int main(int argc, char** argv)
     auto binImage = SH3::makeBinaryImage(filename, params);
     auto K = SH3::getKSpace(binImage);
     auto surface = SH3::makeDigitalSurface(binImage, K, params);
-    auto primalSurface = SH3::makePrimalSurfaceMesh(surface);
-    /*auto polyBunny =*/ registerSurface(primalSurface, "bunny");
+    /*auto polyBunny =*/ registerSurface(surface, "bunny");
     // Create the dual surface mesh and register it
-    /*auto polyDualBunny =*/ registerDual(primalSurface, "dual bunny");
+    /*auto polyDualBunny =*/ registerDual(surface, "dual bunny");
     polyscope::show();
     return 0;
 }
