@@ -21,6 +21,8 @@ typedef ShortcutsGeometry<Z3i::KSpace> SHG3;
 typedef polyscope::SurfaceMesh PolyMesh;
 #define R 0.5
 
+#define MAX_STEPS_L2_MEASURE 2
+
 GradientColorMap<double> makeColorMap(double minv, double maxv) {
     GradientColorMap<double> gcm(minv, maxv);
     gcm.addColor(Color(0,0,255));
@@ -125,19 +127,115 @@ PolyMesh* registerDual(const CountedPtr<SH3::DigitalSurface>& surface, std::stri
     return polyscope::registerSurfaceMesh(std::move(name), positions, faces);
 }
 
+class Varifold {
+public:
+    Varifold(double l2measure, const Z3i::RealVector& dirPlaneX, const Z3i::RealVector& dirPlaneY)
+        : l2measure(l2measure), dirPlaneX(dirPlaneX), dirPlaneY(dirPlaneY) {}
+    double l2measure;
+    Z3i::RealVector dirPlaneX;
+    Z3i::RealVector dirPlaneY;
+};
+
+double computeL2Measure(const CountedPtr<SH3::SurfaceMesh>& mesh, int f) {
+//    // 1 - Create a queue of faces to process, each element is a pair of face index and the previous step + 1
+//    std::queue<std::pair<unsigned long, int>> queue;
+//    queue.emplace(f, 0);
+//    // 2 - Create a set of visited faces
+//    std::set<unsigned long> visited;
+//    visited.insert(f);
+//    // On each step, transfer one face from the queue to the visited set, and add its neighbors to the queue
+//    double l2measure = 0;
+//    while (!queue.empty()) {
+//        auto top = queue.front();
+//        queue.pop();
+//        l2measure += 1;
+//        if (top.second < MAX_STEPS_L2_MEASURE) {
+//            for (auto neighbor : mesh->neighborFaces(top.first)) {
+//                if (visited.find(neighbor) == visited.end()) {
+//                    queue.emplace(neighbor, top.second + 1);
+//                    visited.insert(neighbor);
+//                }
+//            }
+//        }
+//    }
+//    return 1./l2measure;
+    return 1.;
+}
+
+std::pair<Z3i::RealVector, Z3i::RealVector> computeDirectionalPlane(const CountedPtr<SH3::SurfaceMesh>& mesh, const NC nc, int f) {
+    auto N = mesh->faceNormal(f);
+    auto b = mesh->faceCentroid(f);
+    auto area = nc.computeMu0().measure(b, R, f);
+    auto M = nc.computeMuXY().measure(b, R, f);
+    Z3i::RealVector d1, d2;
+    double k1, k2;
+    std::tie(k1, k2, d1, d2) = NC::principalCurvatures(area, M, N);
+    return std::make_pair(d1, d2);
+}
+
+std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::SurfaceMesh>& pSurface) {
+    std::vector<Varifold> varifolds;
+
+
+    NC nc(*pSurface);
+    pSurface->computeFaceNormalsFromPositions();
+    int percent = 0;
+    for (auto f = 0; f < pSurface->nbFaces(); ++f) {
+        if(f*100/pSurface->nbFaces() > percent) {
+            percent += 1;
+            DGtal::trace.info() << "Computing varifolds: " << percent << "%\n";
+        }
+        const auto l2measure = computeL2Measure(pSurface, f);
+        const auto dirPlane = computeDirectionalPlane(pSurface, nc, f);
+        varifolds.emplace_back(l2measure, dirPlane.first, dirPlane.second);
+    }
+
+    return varifolds;
+}
+
 
 int main(int argc, char** argv)
 {
     polyscope::init();
 
     auto params = SH3::defaultParameters() | SHG3::defaultParameters();
-    std::string filename = "../DGtalObjects/bunny66.vol";
+    std::string filename = "../DGtalObjects/bunny33.vol";
     auto binImage = SH3::makeBinaryImage(filename, params);
     auto K = SH3::getKSpace(binImage);
     auto surface = SH3::makeDigitalSurface(binImage, K, params);
-    /*auto polyBunny =*/ registerSurface(surface, "bunny");
+    auto primalSurface = SH3::makePrimalSurfaceMesh(surface);
+    auto polyBunny = registerSurface(surface, "bunny");
     // Create the dual surface mesh and register it
-    /*auto polyDualBunny =*/ registerDual(surface, "dual bunny");
+//    /*auto polyDualBunny =*/ registerDual(surface, "dual bunny");
+
+    // Compute a heat map of the L2 measure
+    DGtal::trace.info() << primalSurface->nbFaces() << std::endl;
+    auto varifolds = computeVarifolds(primalSurface);
+    DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
+//    auto minmax = std::minmax_element(varifolds.begin(), varifolds.end(), [](const Varifold& a, const Varifold& b) {
+//        return a.l2measure < b.l2measure;
+//    });
+//
+//    const auto colormap = makeColorMap(minmax.first->l2measure, minmax.second->l2measure);
+//    DGtal::trace.info() << "Min L2: " << minmax.first->l2measure << " Max L2: " << minmax.second->l2measure << std::endl;
+//    std::vector<std::vector<double>> colorMeasure;
+//    for (auto i = 0; i < primalSurface->nbFaces(); i++) {
+//        const auto color = colormap(varifolds[i].l2measure);
+//        colorMeasure.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
+//    }
+//
+//    polyBunny->addFaceColorQuantity("L2 Measure", colorMeasure);
+
+    // Create 2 vector fields on the surface, one for each direction of the principal curvatures
+    std::vector<Z3i::RealVector> dir1;
+    std::vector<Z3i::RealVector> dir2;
+    for (auto i = 0; i < primalSurface->nbFaces(); i++) {
+        dir1.push_back(varifolds[i].dirPlaneX);
+        dir2.push_back(varifolds[i].dirPlaneY);
+    }
+    polyBunny->addFaceVectorQuantity("Principal Curvature 1", dir1);
+    polyBunny->addFaceVectorQuantity("Principal Curvature 2", dir2);
+
     polyscope::show();
     return 0;
 }
