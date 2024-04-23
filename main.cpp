@@ -176,7 +176,7 @@ std::pair<RealVector, RealVector> computeDirectionalPlane(
     auto M = muXY.measure(b, R, f);
     RealVector d1, d2;
     double k1, k2;
-    std::tie(k1, k2, d1, d2) = NC::principalCurvatures(area, M, N);
+    std::tie(k1, k2, d1, d2) = CNC::principalCurvatures(area, M, N);
     return std::make_pair(d1, d2);
 }
 
