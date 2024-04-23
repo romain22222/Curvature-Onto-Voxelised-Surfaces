@@ -2,6 +2,7 @@
 
 #include "DGtal/base/Common.h"
 #include "DGtal/geometry/meshes/NormalCycleComputer.h"
+#include "DGtal/geometry/meshes/CorrectedNormalCurrentComputer.h"
 #include "DGtal/helpers/ShortcutsGeometry.h"
 #include "DGtal/io/writers/SurfaceMeshWriter.h"
 #include "DGtal/io/colormaps/GradientColorMap.h"
@@ -12,12 +13,14 @@
 #include "polyscope/surface_mesh.h"
 
 using namespace DGtal;
-typedef SurfaceMesh< Z3i::RealPoint, Z3i::RealVector > SM;
-typedef NormalCycleComputer< Z3i::RealPoint, Z3i::RealVector > NC;
-typedef SurfaceMeshHelper< Z3i::RealPoint, Z3i::RealVector > SMH;
-typedef SurfaceMeshWriter< Z3i::RealPoint, Z3i::RealVector > SMW;
-typedef Shortcuts<Z3i::KSpace>         SH3;
-typedef ShortcutsGeometry<Z3i::KSpace> SHG3;
+using namespace DGtal::Z3i;
+typedef SurfaceMesh< RealPoint, RealVector > SM;
+typedef NormalCycleComputer< RealPoint, RealVector > NC;
+typedef CorrectedNormalCurrentComputer< RealPoint, RealVector > CNC;
+typedef SurfaceMeshHelper< RealPoint, RealVector > SMH;
+typedef SurfaceMeshWriter< RealPoint, RealVector > SMW;
+typedef Shortcuts<KSpace>         SH3;
+typedef ShortcutsGeometry<KSpace> SHG3;
 typedef polyscope::SurfaceMesh PolyMesh;
 #define R 0.5
 
@@ -39,7 +42,7 @@ void testDGtal() {
 }
 
 void paper2022Checks() {
-    SM smesh = SMH::makeTorus(3.0, 1.0, Z3i::RealPoint(), 20, 20, 0, SMH::NormalsType::VERTEX_NORMALS);
+    SM smesh = SMH::makeTorus(3.0, 1.0, RealPoint(), 20, 20, 0, SMH::NormalsType::VERTEX_NORMALS);
     NC nc(smesh);
     auto mu0 = nc.computeMu0();
     auto mu1 = nc.computeMu1();
@@ -69,8 +72,8 @@ void paper2022Checks() {
 
     std::vector<double> K1(smesh.nbFaces());
     std::vector<double> K2(smesh.nbFaces());
-    std::vector<Z3i::RealVector> D1(smesh.nbFaces());
-    std::vector<Z3i::RealVector> D2(smesh.nbFaces());
+    std::vector<RealVector> D1(smesh.nbFaces());
+    std::vector<RealVector> D2(smesh.nbFaces());
     smesh.computeFaceNormalsFromPositions();
     for (auto f = 0; f < smesh.nbFaces(); ++f) {
         const auto b = smesh.faceCentroid(f);
@@ -105,7 +108,7 @@ void paper2022Checks() {
 PolyMesh* registerSurface(const CountedPtr<SH3::DigitalSurface>& surface, std::string name) {
     auto primalSurface = SH3::makePrimalSurfaceMesh(surface);
     std::vector<std::vector<size_t>> faces;
-    std::vector<Z3i::RealPoint> positions;
+    std::vector<RealPoint> positions;
 
     for (auto f = 0; f < primalSurface->nbFaces(); ++f) {
         faces.push_back(primalSurface->incidentVertices(f));
@@ -129,14 +132,14 @@ PolyMesh* registerDual(const CountedPtr<SH3::DigitalSurface>& surface, std::stri
 
 class Varifold {
 public:
-    Varifold(double l2measure, const Z3i::RealVector& dirPlaneX, const Z3i::RealVector& dirPlaneY)
+    Varifold(double l2measure, const RealVector& dirPlaneX, const RealVector& dirPlaneY)
         : l2measure(l2measure), dirPlaneX(dirPlaneX), dirPlaneY(dirPlaneY) {}
     double l2measure;
-    Z3i::RealVector dirPlaneX;
-    Z3i::RealVector dirPlaneY;
+    RealVector dirPlaneX;
+    RealVector dirPlaneY;
 };
 
-double computeL2Measure(const CountedPtr<SH3::SurfaceMesh>& mesh, int f) {
+double oldComputeL2Measure(const CountedPtr<SH3::SurfaceMesh>& mesh, int f) {
 //    // 1 - Create a queue of faces to process, each element is a pair of face index and the previous step + 1
 //    std::queue<std::pair<unsigned long, int>> queue;
 //    queue.emplace(f, 0);
@@ -162,31 +165,42 @@ double computeL2Measure(const CountedPtr<SH3::SurfaceMesh>& mesh, int f) {
     return 1.;
 }
 
-std::pair<Z3i::RealVector, Z3i::RealVector> computeDirectionalPlane(const CountedPtr<SH3::SurfaceMesh>& mesh, const NC nc, int f) {
+double computeHaussdorfMeasure(const CountedPtr<SH3::SurfaceMesh>& mesh, int f) {
+    return 1.; // Technically, Haussdorf measure on a surfel is 1
+}
+
+std::pair<RealVector, RealVector> computeDirectionalPlane(
+        const CountedPtr<SH3::SurfaceMesh>& mesh,
+        const SurfaceMeshMeasure<RealPoint, RealVector, SH3::Scalar>& mu0,
+        const SurfaceMeshMeasure<RealPoint, RealVector, SimpleMatrix<SH3::Scalar, 3, 3>>& muXY,
+        int f) {
     auto N = mesh->faceNormal(f);
     auto b = mesh->faceCentroid(f);
-    auto area = nc.computeMu0().measure(b, R, f);
-    auto M = nc.computeMuXY().measure(b, R, f);
-    Z3i::RealVector d1, d2;
+    auto area = mu0.measure(b, R, f);
+    auto M = muXY.measure(b, R, f);
+    RealVector d1, d2;
     double k1, k2;
     std::tie(k1, k2, d1, d2) = NC::principalCurvatures(area, M, N);
     return std::make_pair(d1, d2);
 }
 
-std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::SurfaceMesh>& pSurface) {
+std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::DigitalSurface>& surface) {
     std::vector<Varifold> varifolds;
 
+    const auto pSurface = SH3::makePrimalSurfaceMesh(surface);
 
-    NC nc(*pSurface);
     pSurface->computeFaceNormalsFromPositions();
+    const CNC cnc(*pSurface);
+    const auto mu0 = cnc.computeMu0();
+    const auto muXY = cnc.computeMuXY();
     int percent = 0;
     for (auto f = 0; f < pSurface->nbFaces(); ++f) {
         if(f*100/pSurface->nbFaces() > percent) {
             percent += 1;
             DGtal::trace.info() << "Computing varifolds: " << percent << "%\n";
         }
-        const auto l2measure = computeL2Measure(pSurface, f);
-        const auto dirPlane = computeDirectionalPlane(pSurface, nc, f);
+        const auto l2measure = computeHaussdorfMeasure(pSurface, f);
+        const auto dirPlane = computeDirectionalPlane(pSurface, mu0, muXY, f);
         varifolds.emplace_back(l2measure, dirPlane.first, dirPlane.second);
     }
 
@@ -210,7 +224,7 @@ int main(int argc, char** argv)
 
     // Compute a heat map of the L2 measure
     DGtal::trace.info() << primalSurface->nbFaces() << std::endl;
-    auto varifolds = computeVarifolds(primalSurface);
+    auto varifolds = computeVarifolds(surface);
     DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
 //    auto minmax = std::minmax_element(varifolds.begin(), varifolds.end(), [](const Varifold& a, const Varifold& b) {
 //        return a.l2measure < b.l2measure;
@@ -227,8 +241,8 @@ int main(int argc, char** argv)
 //    polyBunny->addFaceColorQuantity("L2 Measure", colorMeasure);
 
     // Create 2 vector fields on the surface, one for each direction of the principal curvatures
-    std::vector<Z3i::RealVector> dir1;
-    std::vector<Z3i::RealVector> dir2;
+    std::vector<RealVector> dir1;
+    std::vector<RealVector> dir2;
     for (auto i = 0; i < primalSurface->nbFaces(); i++) {
         dir1.push_back(varifolds[i].dirPlaneX);
         dir2.push_back(varifolds[i].dirPlaneY);
