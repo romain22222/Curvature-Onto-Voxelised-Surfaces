@@ -129,12 +129,19 @@ PolyMesh* registerDual(PolygonalSurface<RealPoint> surface, std::string name) {
 
 class Varifold {
 public:
-    Varifold(double l2measure, const RealVector& dirPlaneX, const RealVector& dirPlaneY)
-        : l2measure(l2measure), dirPlaneX(dirPlaneX), dirPlaneY(dirPlaneY) {}
-    double l2measure;
+    Varifold(const RealPoint& position, const RealVector& dirPlaneX, const RealVector& dirPlaneY)
+        : position(position), dirPlaneX(dirPlaneX), dirPlaneY(dirPlaneY) {}
+    RealPoint position;
     RealVector dirPlaneX;
     RealVector dirPlaneY;
 };
+
+std::pair<RealVector, RealVector> computeDirectionalPlaneFromNormal(const RealVector &N) {
+    const auto e1 = RealVector(1, 0, 0);
+    const auto v = N.crossProduct(e1)/N.crossProduct(e1).norm();
+    const auto w = N.crossProduct(v);
+    return std::make_pair(v, w);
+}
 
 double oldComputeL2Measure(SH3::SurfaceMesh& mesh, int f) {
     // 1 - Create a queue of faces to process, each element is a pair of face index and the previous step + 1
@@ -161,23 +168,59 @@ double oldComputeL2Measure(SH3::SurfaceMesh& mesh, int f) {
     return l2measure;
 }
 
-double computeHaussdorfMeasure(SH3::SurfaceMesh& mesh, int f) {
-    return 1.; // Technically, Haussdorf measure on a surfel is 1
-}
+
+typedef std::pair<int, double> WeightedFace;
+
+typedef enum {
+    FlatDisc,
+    Cone,
+    HalfSphere
+} DistributionType;
+
+class RadialDistance {
+public:
+    RadialDistance(const RealPoint& center, const double radius, const DistributionType& distribution)
+        : center(center), radius(radius) {
+        switch (distribution) {
+            case DistributionType::FlatDisc:
+                measureFunction = [&radius](const SH3::SurfaceMesh& mesh, int face, double distance) {
+                    // Not sure about if we should weight the radius here or not
+                    return WeightedFace(face, 3./(4*M_1_PI));
+//                    return WeightedFace(face, 3./(4*M_1_PI*radius*radius*radius));
+                };
+                break;
+            case DistributionType::Cone:
+                measureFunction = [&radius](const SH3::SurfaceMesh& mesh, int face, double distance) {
+                    return WeightedFace(face, 1.); // TODO: Implement the cone distribution
+                };
+                break;
+            case DistributionType::HalfSphere:
+                measureFunction = [&radius](const SH3::SurfaceMesh& mesh, int face, double distance) {
+                    return WeightedFace(face, 1.); // TODO: Implement the half sphere distribution
+                };
+                break;
+        }
+    }
+    RealPoint center;
+    double radius;
+    std::function<WeightedFace(const SH3::SurfaceMesh&, int face, double distance)> measureFunction;
+
+    std::vector<WeightedFace> operator()(const SH3::SurfaceMesh& mesh) const {
+        std::vector<WeightedFace> wf;
+        for (auto f = 0; f < mesh.nbFaces(); ++f) {
+            // If the face is inside the radius, compute the weight
+            const auto b = mesh.faceCentroid(f);
+            const auto d = (b - center).norm();
+            wf.push_back(d < radius ? measureFunction(mesh, f, d) : WeightedFace(f, 0));
+        }
+        return wf;
+    }
+};
 
 std::pair<RealVector, RealVector> computeDirectionalPlane(
         const SH3::SurfaceMesh& mesh,
-        const SurfaceMeshMeasure<RealPoint, RealVector, SH3::Scalar>& mu0,
-        const SurfaceMeshMeasure<RealPoint, RealVector, SimpleMatrix<SH3::Scalar, 3, 3>>& muXY,
         int f) {
-    const auto& N = mesh.faceNormal(f);
-    auto b = mesh.faceCentroid(f);
-    auto area = mu0.measure(b, R, f);
-    auto M = muXY.measure(b, R, f);
-    RealVector d1, d2;
-    double k1, k2;
-    std::tie(k1, k2, d1, d2) = CNC::principalCurvatures(area, M, N);
-    return std::make_pair(d1, d2);
+    return computeDirectionalPlaneFromNormal(mesh.faceNormal(f));
 }
 
 std::vector<Varifold> computeVarifolds(SH3::SurfaceMesh& surface) {
@@ -185,8 +228,6 @@ std::vector<Varifold> computeVarifolds(SH3::SurfaceMesh& surface) {
 
     surface.computeFaceNormalsFromPositions();
     const CNC cnc(surface);
-    const auto mu0 = cnc.computeMu0();
-    const auto muXY = cnc.computeMuXY();
     int percent = 0;
     for (auto f = 0; f < surface.nbFaces(); ++f) {
         if(f*100/surface.nbFaces() > percent) {
@@ -194,8 +235,8 @@ std::vector<Varifold> computeVarifolds(SH3::SurfaceMesh& surface) {
             DGtal::trace.info() << "Computing varifolds: " << percent << "%\n";
         }
         const auto l2measure = oldComputeL2Measure(surface, f);
-        const auto dirPlane = computeDirectionalPlane(surface, mu0, muXY, f);
-        varifolds.emplace_back(l2measure, dirPlane.first, dirPlane.second);
+        const auto dirPlane = computeDirectionalPlane(surface, f);
+        varifolds.emplace_back(surface.faceCentroid(f), dirPlane.first, dirPlane.second);
     }
 
     return varifolds;
@@ -225,20 +266,6 @@ int main(int argc, char** argv)
     DGtal::trace.info() << primalSurface.nbFaces() << std::endl;
     auto varifolds = computeVarifolds(primalSurface);
     DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
-    auto minmax = std::minmax_element(varifolds.begin(), varifolds.end(), [](const Varifold& a, const Varifold& b) {
-        return a.l2measure < b.l2measure;
-    });
-
-    DGtal::trace.info() << "Min L2: " << minmax.first->l2measure << " Max L2: " << minmax.second->l2measure << std::endl;
-
-    const auto colormap = makeColorMap(minmax.first->l2measure - (minmax.first->l2measure==minmax.second->l2measure ? 1 : 0), minmax.second->l2measure);
-    std::vector<std::vector<double>> colorMeasure;
-    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
-        const auto color = colormap(varifolds[i].l2measure);
-        colorMeasure.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
-    }
-
-    polyBunny->addFaceColorQuantity("L2 Measure", colorMeasure);
 
     // Create 2 vector fields on the surface, one for each direction of the principal curvatures
     std::vector<RealVector> dir1;
@@ -249,6 +276,8 @@ int main(int argc, char** argv)
     }
     polyBunny->addFaceVectorQuantity("Principal Curvature 1", dir1);
     polyBunny->addFaceVectorQuantity("Principal Curvature 2", dir2);
+
+
 
     polyscope::show();
     return 0;
