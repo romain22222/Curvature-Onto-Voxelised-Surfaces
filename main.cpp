@@ -129,12 +129,11 @@ PolyMesh* registerDual(PolygonalSurface<RealPoint> surface, std::string name) {
 
 class Varifold {
 public:
-    Varifold(const RealPoint& position, const RealVector& dirPlaneX, const RealVector& dirPlaneY, double l2measure)
-        : position(position), dirPlaneX(dirPlaneX), dirPlaneY(dirPlaneY), l2measure(l2measure) {}
+    Varifold(const RealPoint& position, const RealVector& dirPlaneX, const RealVector& dirPlaneY)
+        : position(position), dirPlaneX(dirPlaneX), dirPlaneY(dirPlaneY) {}
     RealPoint position;
     RealVector dirPlaneX;
     RealVector dirPlaneY;
-    double l2measure;
 };
 
 std::pair<RealVector, RealVector> computeDirectionalPlaneFromNormal(const RealVector &N) {
@@ -183,6 +182,7 @@ typedef enum {
 
 class RadialDistance {
 public:
+    RadialDistance(): center(0,0,0), radius(1) {};
     RadialDistance(const RealPoint& center, const double radius, const DistributionType& distribution)
         : center(center), radius(radius) {
         switch (distribution) {
@@ -232,48 +232,58 @@ std::vector<Varifold> computeVarifolds(SH3::SurfaceMesh& surface) {
     const CNC cnc(surface);
     int percent = 0;
 
-    double radius = 5;
-
-    const auto rdfd = RadialDistance(surface.faceCentroid(350), radius, DistributionType::FlatDisc);
-    const auto rdc = RadialDistance(surface.faceCentroid(3600), radius, DistributionType::Cone);
-    const auto rdhs = RadialDistance(surface.faceCentroid(14500), radius, DistributionType::HalfSphere);
-
-    const auto weightsfd = rdfd(surface);
-    const auto weightsc = rdc(surface);
-    const auto weightshs = rdhs(surface);
-
-    double sum = 0;
-    for (auto f = 0; f < surface.nbFaces(); ++f) {
-        sum += weightsfd[f];
-    }
-    DGtal::trace.info() << "Sum of weights fd: " << sum << std::endl;
-    DGtal::trace.info() << "Minmax fd: " << *std::min_element(weightsfd.begin(), weightsfd.end()) << " " << *std::max_element(weightsfd.begin(), weightsfd.end()) << std::endl;
-
-    sum = 0;
-    for (auto f = 0; f < surface.nbFaces(); ++f) {
-        sum += weightsc[f];
-    }
-    DGtal::trace.info() << "Sum of weights c: " << sum << std::endl;
-    DGtal::trace.info() << "Minmax c: " << *std::min_element(weightsc.begin(), weightsc.end()) << " " << *std::max_element(weightsc.begin(), weightsc.end()) << std::endl;
-
-    sum = 0;
-    for (auto f = 0; f < surface.nbFaces(); ++f) {
-        sum += weightshs[f];
-    }
-    DGtal::trace.info() << "Sum of weights hs: " << sum << std::endl;
-    DGtal::trace.info() << "Minmax hs: " << *std::min_element(weightshs.begin(), weightshs.end()) << " " << *std::max_element(weightshs.begin(), weightshs.end()) << std::endl;
-
     for (auto f = 0; f < surface.nbFaces(); ++f) {
         if(f*100/surface.nbFaces() > percent) {
             percent += 1;
-//            DGtal::trace.info() << "Computing varifolds: " << percent << "%\n";
+            DGtal::trace.info() << "Computing varifolds: " << percent << "%\n";
         }
-        const auto l2measure = weightsfd[f] + weightsc[f] + weightshs[f];
         const auto dirPlane = computeDirectionalPlane(surface, f);
-        varifolds.emplace_back(surface.faceCentroid(f), dirPlane.first, dirPlane.second, l2measure);
+        varifolds.emplace_back(surface.faceCentroid(f), dirPlane.first, dirPlane.second);
     }
 
     return varifolds;
+}
+
+typedef enum {
+    TrivialCentroid,
+    TrivialDualCentroid,
+    CorrectedCentroid,
+    ProbabilisticCentroid,
+    VertexInterpolation
+} Method;
+
+std::vector<double> computeLocalCurvature(const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
+    std::vector<double> curvatures;
+    const CountedPtr<SH3::SurfaceMesh> pSurface = SH3::makePrimalSurfaceMesh(surface);
+    const auto dSurface = SH3::makeDualPolygonalSurface(surface);
+
+    SH3::RealVectors normals;
+    RadialDistance rd;
+    std::vector<WeightedFace> weights;
+    double tmpSum;
+
+    switch (method) {
+        case TrivialCentroid:
+            normals = pSurface->faceNormals();
+            for (auto f = 0; f < pSurface->nbFaces(); ++f) {
+                tmpSum = 0;
+                const auto b = pSurface->faceCentroid(f);
+                rd = RadialDistance(b, cRadius, cDistribType);
+                weights = rd(*pSurface);
+                for (auto otherF = 0; otherF < pSurface->nbFaces(); ++otherF) {
+                    if (weights[otherF] > 0) {
+                        // Add to tmpSum the awaited result
+                        // TODO
+                    }
+                }
+                curvatures.push_back(1/cRadius * tmpSum);
+            }
+            break;
+        default:
+            break;
+    }
+
+    return curvatures;
 }
 
 
@@ -301,29 +311,31 @@ int main(int argc, char** argv)
     auto varifolds = computeVarifolds(primalSurface);
     DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
 
-    auto minmax = std::minmax_element(varifolds.begin(), varifolds.end(), [](const Varifold& a, const Varifold& b) {
-        return a.l2measure < b.l2measure;
-    });
+//    auto minmax = std::minmax_element(varifolds.begin(), varifolds.end(), [](const Varifold& a, const Varifold& b) {
+//        return a.l2measure < b.l2measure;
+//    });
+//
+//    DGtal::trace.info() << "Min L2: " << minmax.first->l2measure << " Max L2: " << minmax.second->l2measure << std::endl;
+//
+//    const auto colormap = makeColorMap(minmax.first->l2measure - (minmax.first->l2measure==minmax.second->l2measure ? 1 : 0), minmax.second->l2measure);
+//    std::vector<std::vector<double>> colorMeasure;
+//    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+//        const auto color = colormap(varifolds[i].l2measure);
+//        colorMeasure.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
+//    }
+//
+//    polyBunny->addFaceColorQuantity("L2 Measure", colorMeasure);
 
-    DGtal::trace.info() << "Min L2: " << minmax.first->l2measure << " Max L2: " << minmax.second->l2measure << std::endl;
+//    const auto colormap2 = makeColorMap(0, primalSurface.nbFaces());
+//    std::vector<std::vector<double>> colorIndex;
+//    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+//        const auto color = colormap2(i);
+//        colorIndex.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
+//    }
+//
+//    polyBunny->addFaceColorQuantity("Index", colorIndex);
 
-    const auto colormap = makeColorMap(minmax.first->l2measure - (minmax.first->l2measure==minmax.second->l2measure ? 1 : 0), minmax.second->l2measure);
-    std::vector<std::vector<double>> colorMeasure;
-    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
-        const auto color = colormap(varifolds[i].l2measure);
-        colorMeasure.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
-    }
 
-    polyBunny->addFaceColorQuantity("L2 Measure", colorMeasure);
-
-    const auto colormap2 = makeColorMap(0, primalSurface.nbFaces());
-    std::vector<std::vector<double>> colorIndex;
-    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
-        const auto color = colormap2(i);
-        colorIndex.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
-    }
-
-    polyBunny->addFaceColorQuantity("Index", colorIndex);
 
     // Create 2 vector fields on the surface, one for each direction of the principal curvatures
     std::vector<RealVector> dir1;
