@@ -172,7 +172,12 @@ double oldComputeL2Measure(SH3::SurfaceMesh& mesh, int f) {
 }
 
 
-typedef double WeightedFace;
+typedef std::pair<double, double> WeightedFace;
+
+WeightedFace makeWeightedFace(double weight, double weightDerivate) {
+    return std::make_pair(weight, weightDerivate);
+}
+
 
 typedef enum {
     FlatDisc,
@@ -190,22 +195,32 @@ public:
                 measureFunction = [](const SH3::SurfaceMesh& mesh, long double dRatio) {
                     return 3./(4*M_PI);
                 };
+                measureFunctionDerivate = [](const SH3::SurfaceMesh& mesh, long double dRatio) {
+                    return 0;
+                };
                 break;
             case DistributionType::Cone:
                 measureFunction = [](const SH3::SurfaceMesh& mesh, long double dRatio) {
                     return (1-dRatio) * M_PI/12.;
+                };
+                measureFunctionDerivate = [](const SH3::SurfaceMesh& mesh, long double dRatio) {
+                    return -M_PI/12.;
                 };
                 break;
             case DistributionType::HalfSphere:
                 measureFunction = [](const SH3::SurfaceMesh& mesh, long double dRatio) {
                     return (1-dRatio*dRatio)/(M_PI * 2);
                 };
+                measureFunctionDerivate = [](const SH3::SurfaceMesh& mesh, long double dRatio) {
+                    return -dRatio/(M_PI);
+                };
                 break;
         }
     }
     RealPoint center;
     double radius;
-    std::function<WeightedFace(const SH3::SurfaceMesh&, double)> measureFunction;
+    std::function<double(const SH3::SurfaceMesh&, double)> measureFunction;
+    std::function<double(const SH3::SurfaceMesh&, double)> measureFunctionDerivate;
 
     std::vector<WeightedFace> operator()(const SH3::SurfaceMesh& mesh) const {
         std::vector<WeightedFace> wf;
@@ -213,7 +228,7 @@ public:
             // If the face is inside the radius, compute the weight
             const auto b = mesh.faceCentroid(f);
             const auto d = (b - center).norm();
-            wf.push_back(d < radius ? measureFunction(mesh, d/radius) : 0);
+            wf.push_back(d < radius ? makeWeightedFace(measureFunction(mesh, d/radius), measureFunctionDerivate(mesh, d/radius)) : makeWeightedFace(0, 0));
         }
         return wf;
     }
@@ -252,6 +267,8 @@ typedef enum {
     VertexInterpolation
 } Method;
 
+
+
 std::vector<double> computeLocalCurvature(const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
     std::vector<double> curvatures;
     const CountedPtr<SH3::SurfaceMesh> pSurface = SH3::makePrimalSurfaceMesh(surface);
@@ -260,23 +277,28 @@ std::vector<double> computeLocalCurvature(const CountedPtr<SH3::DigitalSurface>&
     SH3::RealVectors normals;
     RadialDistance rd;
     std::vector<WeightedFace> weights;
-    double tmpSum;
+    double tmpSumTop;
+    double tmpSumBottom;
+    RealVector tmpVector;
 
     switch (method) {
         case TrivialCentroid:
             normals = pSurface->faceNormals();
             for (auto f = 0; f < pSurface->nbFaces(); ++f) {
-                tmpSum = 0;
+                tmpSumTop = 0;
+                tmpSumBottom = 0;
                 const auto b = pSurface->faceCentroid(f);
                 rd = RadialDistance(b, cRadius, cDistribType);
                 weights = rd(*pSurface);
                 for (auto otherF = 0; otherF < pSurface->nbFaces(); ++otherF) {
-                    if (weights[otherF] > 0) {
+                    if (weights[otherF].first > 0) {
                         // Add to tmpSum the awaited result
-                        // TODO
+                        tmpVector = pSurface->faceCentroid(otherF) - b;
+                        tmpSumTop += weights[otherF].second * projection(tmpVector, normals[f])/tmpVector.norm();
+                        tmpSumBottom += weights[otherF].first;
                     }
                 }
-                curvatures.push_back(1/cRadius * tmpSum);
+                curvatures.push_back(-tmpSumTop/(tmpSumBottom*cRadius));
             }
             break;
         default:
