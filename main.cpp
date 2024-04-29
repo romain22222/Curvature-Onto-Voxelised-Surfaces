@@ -238,7 +238,7 @@ RealVector projection(const RealVector& toProject, const RealVector& planeNormal
     return toProject - planeNormal * (toProject.dot(planeNormal)/planeNormal.squaredNorm());
 }
 
-std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
+std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
     std::vector<RealVector> curvatures;
     const CountedPtr<SH3::SurfaceMesh> pSurface = SH3::makePrimalSurfaceMesh(surface);
     RadialDistance rd;
@@ -250,81 +250,77 @@ std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::DigitalSurfa
 
     auto positions = SH3::RealPoints();
 
+    auto normals = SH3::RealVectors();
+
+    unsigned long nbElements;
+
+    pSurface->computeFaceNormalsFromPositions();
+    pSurface->computeVertexNormalsFromFaceNormals();
+
     switch (method) {
         case TrivialNormalFaceCentroid:
-            pSurface->computeFaceNormalsFromPositions();
-            for (auto f = 0; f < pSurface->nbFaces(); ++f) {
+            nbElements = pSurface->nbFaces();
+            for (auto f = 0; f < nbElements; ++f) {
                 positions.push_back(pSurface->faceCentroid(f));
-            }
-            for (auto f = 0; f < pSurface->nbFaces(); ++f) {
-                if(f*100/pSurface->nbFaces() > percent) {
-                    percent += 1;
-                    DGtal::trace.info() << "Computing curvatures: " << percent << "%\n";
-                }
-                tmpSumTop = RealVector();
-                tmpSumBottom = 0;
-                const auto b = positions[f];
-                rd = RadialDistance(b, cRadius, cDistribType);
-                weights = rd(positions);
-                for (auto otherF = 0; otherF < pSurface->nbFaces(); ++otherF) {
-                    if (weights[otherF].first > 0) {
-                        // Add to tmpSum the awaited result
-                        if (f != otherF) {
-                            tmpVector = pSurface->faceCentroid(otherF) - b;
-                            tmpSumTop += weights[otherF].first * projection(tmpVector, pSurface->faceNormal(otherF))/tmpVector.norm();
-                        }
-                        tmpSumBottom += weights[otherF].first;
-                    }
-                }
-                curvatures.push_back(-tmpSumTop/(tmpSumBottom*cRadius));
+                normals.push_back(pSurface->faceNormal(f));
             }
             break;
         case DualNormalFaceCentroid:
-            for (auto v = 0; v < pSurface->nbVertices(); ++v) {
+            nbElements = pSurface->nbVertices();
+            for (auto v = 0; v < nbElements; ++v) {
                 positions.push_back(pSurface->position(v));
+                normals.push_back(pSurface->vertexNormal(v));
             }
-            pSurface->computeFaceNormalsFromPositions();
-            pSurface->computeVertexNormalsFromFaceNormals();
-            for (auto v = 0; v < pSurface->nbVertices(); ++v) {
-                if(v * 100 / pSurface->nbVertices() > percent) {
-                    percent += 1;
-                    DGtal::trace.info() << "Computing curvatures: " << percent << "%\n";
-                }
-                tmpSumTop = RealVector();
-                tmpSumBottom = 0;
-                const auto b = positions[v];
-                rd = RadialDistance(b, cRadius, cDistribType);
-                weights = rd(positions);
-                for (auto otherV = 0; otherV < pSurface->nbVertices(); ++otherV) {
-                    if (weights[otherV].first > 0) {
-                        // Add to tmpSum the awaited result
-                        if (v != otherV) {
-                            tmpVector = pSurface->position(otherV) - b;
-                            tmpSumTop += weights[otherV].first * projection(tmpVector, pSurface->vertexNormal(otherV)) / tmpVector.norm();
-                        }
-                        tmpSumBottom += weights[otherV].first;
-                    }
-                }
-                curvatures.push_back(-tmpSumTop/(tmpSumBottom*cRadius));
-            }
-        default:
             break;
+        case CorrectedNormalFaceCentroid:
+            nbElements = pSurface->nbFaces();
+            normals = SHG3::getIINormalVectors(bimage, SH3::getSurfelRange(surface), SHG3::defaultParameters());
+            for (auto f = 0; f < nbElements; ++f) {
+                positions.push_back(pSurface->faceCentroid(f));
+            }
+            break;
+        default:
+            return curvatures;
+    }
+
+    for (auto f = 0; f < nbElements; ++f) {
+        if(f*100/nbElements > percent) {
+            percent += 1;
+            DGtal::trace.info() << "Computing curvatures: " << percent << "%\n";
+        }
+        tmpSumTop = RealVector();
+        tmpSumBottom = 0;
+        const auto b = positions[f];
+        rd = RadialDistance(b, cRadius, cDistribType);
+        weights = rd(positions);
+        for (auto otherF = 0; otherF < nbElements; ++otherF) {
+            if (weights[otherF].first > 0) {
+                // Add to tmpSum the awaited result
+                if (f != otherF) {
+                    tmpVector = positions[otherF] - b;
+                    tmpSumTop += weights[otherF].first * projection(tmpVector, normals[otherF])/tmpVector.norm();
+                }
+                tmpSumBottom += weights[otherF].first;
+            }
+        }
+        curvatures.push_back(-tmpSumTop/(tmpSumBottom*cRadius));
     }
 
     return curvatures;
 }
 
-std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
+std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
     std::vector<Varifold> varifolds;
 
     auto ps = *SH3::makePrimalSurfaceMesh(surface);
 
     int percent = 0;
 
-    auto curvatures = computeLocalCurvature(surface, cRadius, cDistribType, method);
+    auto curvatures = computeLocalCurvature(bimage, surface, cRadius, cDistribType, method);
 
     switch (method) {
         case TrivialNormalFaceCentroid:
+        case CorrectedNormalFaceCentroid:
             ps.computeFaceNormalsFromPositions();
             for (auto f = 0; f < ps.nbFaces(); ++f) {
                 if(f*100/ps.nbFaces() > percent) {
@@ -376,35 +372,35 @@ int main(int argc, char** argv)
     /*auto polyDualBunny =*/ registerDual(dualSurface, "dual bunny");
 
     // Compute a heat map of the L2 measure
-//    DGtal::trace.info() << primalSurface.nbFaces() << std::endl;
-//    auto varifolds = computeVarifolds(surface, 10, DistributionType::HalfSphere, Method::TrivialNormalFaceCentroid);
-//    DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
-//
-//    std::vector<RealVector> normals;
-//    std::vector<RealVector> lcs;
-//    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
-//        normals.push_back(varifolds[i].planeNormal);
-//        lcs.push_back(varifolds[i].curvature);
-//    }
-//    polyBunny->addFaceVectorQuantity("Trivial Normals", normals);
-//    polyBunny->addFaceVectorQuantity("TNFC Local Curvatures", lcs);
-//
-//    // Create a heatmap of the norm of the local curvatures
-//    std::vector<double> lcsNorm;
-//    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
-//        lcsNorm.push_back(lcs[i].norm());
-//    }
-//
-//    auto minmax = std::minmax_element(lcsNorm.begin(), lcsNorm.end());
-//    const auto colormap = makeColorMap(*minmax.first, *minmax.second);
-//    std::vector<std::vector<double>> colorLcsNorm;
-//    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
-//        const auto color = colormap(lcsNorm[i]);
-//        colorLcsNorm.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
-//    }
-//    polyBunny->addFaceColorQuantity("TNFC Local Curvatures Norm", colorLcsNorm);
+    DGtal::trace.info() << primalSurface.nbFaces() << std::endl;
+    auto varifolds = computeVarifolds(binImage, surface, 10, DistributionType::HalfSphere, Method::TrivialNormalFaceCentroid);
+    DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
 
-    auto varifolds2 = computeVarifolds(surface, 10, DistributionType::HalfSphere, Method::DualNormalFaceCentroid);
+    std::vector<RealVector> normals;
+    std::vector<RealVector> lcs;
+    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+        normals.push_back(varifolds[i].planeNormal);
+        lcs.push_back(varifolds[i].curvature);
+    }
+//    polyBunny->addFaceVectorQuantity("Trivial Normals", normals);
+    polyBunny->addFaceVectorQuantity("TNFC Local Curvatures", lcs);
+
+    // Create a heatmap of the norm of the local curvatures
+    std::vector<double> lcsNorm;
+    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+        lcsNorm.push_back(lcs[i].norm());
+    }
+
+    auto minmax = std::minmax_element(lcsNorm.begin(), lcsNorm.end());
+    const auto colormap = makeColorMap(*minmax.first, *minmax.second);
+    std::vector<std::vector<double>> colorLcsNorm;
+    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+        const auto color = colormap(lcsNorm[i]);
+        colorLcsNorm.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
+    }
+    polyBunny->addFaceColorQuantity("TNFC Local Curvatures Norm", colorLcsNorm);
+
+    auto varifolds2 = computeVarifolds(binImage, surface, 10, DistributionType::HalfSphere, Method::DualNormalFaceCentroid);
 
     std::vector<RealVector> normals2;
     std::vector<RealVector> lcs2;
@@ -413,7 +409,7 @@ int main(int argc, char** argv)
         normals2.push_back(varifolds2[i].planeNormal);
         lcs2.push_back(varifolds2[i].curvature);
     }
-    polyBunny->addVertexVectorQuantity("Dual Normals", normals2);
+//    polyBunny->addVertexVectorQuantity("Dual Normals", normals2);
     polyBunny->addVertexVectorQuantity("DNFC Local Curvatures", lcs2);
 
     // Create a heatmap of the norm of the local curvatures
@@ -431,6 +427,32 @@ int main(int argc, char** argv)
     }
     polyBunny->addVertexColorQuantity("DNFC Local Curvatures Norm", colorLcsNorm2);
 
+    auto varifolds3 = computeVarifolds(binImage, surface, 10, DistributionType::HalfSphere, Method::CorrectedNormalFaceCentroid);
+
+    std::vector<RealVector> normals3;
+    std::vector<RealVector> lcs3;
+
+    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+        normals3.push_back(varifolds3[i].planeNormal);
+        lcs3.push_back(varifolds3[i].curvature);
+    }
+//    polyBunny->addFaceVectorQuantity("Corrected Normals", normals3);
+    polyBunny->addFaceVectorQuantity("CNFC Local Curvatures", lcs3);
+
+    // Create a heatmap of the norm of the local curvatures
+    std::vector<double> lcsNorm3;
+    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+        lcsNorm3.push_back(lcs3[i].norm());
+    }
+
+    auto minmax3 = std::minmax_element(lcsNorm3.begin(), lcsNorm3.end());
+    const auto colormap3 = makeColorMap(*minmax3.first, *minmax3.second);
+    std::vector<std::vector<double>> colorLcsNorm3;
+    for (auto i = 0; i < primalSurface.nbFaces(); i++) {
+        const auto color = colormap3(lcsNorm3[i]);
+        colorLcsNorm3.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
+    }
+    polyBunny->addFaceColorQuantity("CNFC Local Curvatures Norm", colorLcsNorm3);
 
     polyscope::show();
     return 0;
