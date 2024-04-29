@@ -357,7 +357,8 @@ int main(int argc, char** argv)
     polyscope::init();
 
     auto params = SH3::defaultParameters() | SHG3::defaultParameters();
-    std::string filename = "../DGtalObjects/bunny66.vol";
+    std::string filename = argc > 1 ? argv[1] : "../DGtalObjects/bunny66.vol";
+    double radius = argc > 2 ? std::atof( argv[2] ) : 10.0;
     auto binImage = SH3::makeBinaryImage(filename, params);
     auto K = SH3::getKSpace(binImage);
     auto surface = SH3::makeDigitalSurface(binImage, K, params);
@@ -373,7 +374,7 @@ int main(int argc, char** argv)
 
     // Compute a heat map of the L2 measure
     DGtal::trace.info() << primalSurface.nbFaces() << std::endl;
-    auto varifolds = computeVarifolds(binImage, surface, 10, DistributionType::HalfSphere, Method::TrivialNormalFaceCentroid);
+    auto varifolds = computeVarifolds(binImage, surface, radius, DistributionType::HalfSphere, Method::TrivialNormalFaceCentroid);
     DGtal::trace.info() << "Computed " << varifolds.size() << " varifolds" << std::endl;
 
     std::vector<RealVector> normals;
@@ -400,7 +401,7 @@ int main(int argc, char** argv)
     }
     polyBunny->addFaceColorQuantity("TNFC Local Curvatures Norm", colorLcsNorm);
 
-    auto varifolds2 = computeVarifolds(binImage, surface, 10, DistributionType::HalfSphere, Method::DualNormalFaceCentroid);
+    auto varifolds2 = computeVarifolds(binImage, surface, radius, DistributionType::HalfSphere, Method::DualNormalFaceCentroid);
 
     std::vector<RealVector> normals2;
     std::vector<RealVector> lcs2;
@@ -427,7 +428,7 @@ int main(int argc, char** argv)
     }
     polyBunny->addVertexColorQuantity("DNFC Local Curvatures Norm", colorLcsNorm2);
 
-    auto varifolds3 = computeVarifolds(binImage, surface, 10, DistributionType::HalfSphere, Method::CorrectedNormalFaceCentroid);
+    auto varifolds3 = computeVarifolds(binImage, surface, radius, DistributionType::HalfSphere, Method::CorrectedNormalFaceCentroid);
 
     std::vector<RealVector> normals3;
     std::vector<RealVector> lcs3;

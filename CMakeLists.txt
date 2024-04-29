@@ -2,11 +2,19 @@ cmake_minimum_required(VERSION 3.11)
 PROJECT(DGtalTest)
 
 #Required in DGtal
-set(CMAKE_CXX_STANDARD 11)
-add_subdirectory("/usr/local/polyscope" "polyscope")
-set(SRCS
+# add_subdirectory("/usr/local/polyscope" "polyscope")
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/recipes)
+
+include(config)
+
+set (SRCS
         main.cpp
 )
+
 
 add_executable(project "${SRCS}")
 target_link_libraries(project polyscope)
