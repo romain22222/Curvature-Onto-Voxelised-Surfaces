@@ -37,9 +37,7 @@ If unprovided, the default values are:
 
 The computation of the curvature is based on the following formula:
 
-$$
-H_{\varepsilon}(x)=-\frac{\delta V * \rho_{\varepsilon}(x)}{\|V\| * \rho_{\varepsilon}(x)} \underset{\varepsilon \rightarrow 0}{\longrightarrow} H(x)
-$$
+![](https://cdn.mathpix.com/snip/images/G96MmMdOnBfr1A4eK1BzjCxanXSGQwvZkXIYYHq82S4.original.fullsize.png)
 
 where $V$ is the studied varifold, $\rho_{\varepsilon}$ the kernel function and $H(x)$ the curvature at point $x$.
 
@@ -47,11 +45,7 @@ where $V$ is the studied varifold, $\rho_{\varepsilon}$ the kernel function and 
 
 In the case of a point cloud, the formula becomes:
 
-```math
-\begin{equation}
-H_{\varepsilon}^N(x)=-\frac{\delta V_N * \rho_{\varepsilon}(x)}{\left\|V_N\right\| * \rho_{\varepsilon}(x)}=-\frac{\sum_{j=1}^N m_j \zeta^{\prime}\left(\frac{\left|x_j-x\right|}{\varepsilon}\right) \frac{\Pi_{P_j}\left(x_j-x\right)}{\left|x_j-x\right|}}{\sum_{j=1}^N m_j \varepsilon \zeta\left(\frac{\left|x_j-x\right|}{\varepsilon}\right)} .
-\end{equation}
-```
+![](https://cdn.mathpix.com/snip/images/uE_lJLHV8uaO5VWNftC9YCz2yOWTrfVtCEYjZ2LFOpw.original.fullsize.png)
 
 where $V_N$ is the varifold associated with the point cloud, $m_j$ the mass of the point $x_j$, $\zeta$ the kernel function and $\Pi_{P_j}$ the orthogonal projection on the tangent plane $P_j$ at point $x_j$.
 
