@@ -123,7 +123,7 @@ public:
 
 typedef enum {
     TrivialNormalFaceCentroid,
-    DualNormalFaceCentroid,
+    DualNormalVertexPosition,
     CorrectedNormalFaceCentroid,
     ProbabilisticOfTrivials,
     VertexInterpolation
@@ -159,7 +159,7 @@ std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::BinaryImage>
                 normals.push_back(pSurface->faceNormal(f));
             }
             break;
-        case DualNormalFaceCentroid:
+        case DualNormalVertexPosition:
             nbElements = pSurface->nbVertices();
             for (auto v = 0; v < nbElements; ++v) {
                 positions.push_back(pSurface->position(v));
@@ -222,7 +222,7 @@ std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimag
                 varifolds.emplace_back(ps.faceCentroid(f), normals[f], curvatures[f]);
             }
             break;
-        case DualNormalFaceCentroid:
+        case DualNormalVertexPosition:
             ps.computeFaceNormalsFromPositions();
             ps.computeVertexNormalsFromFaceNormals();
             for (auto v = 0; v < ps.nbVertices(); ++v) {
@@ -249,8 +249,8 @@ DistributionType argToDistribType(const std::string& arg) {
 Method argToMethod(const std::string& arg) {
     if (arg == "tnfc") {
         return Method::TrivialNormalFaceCentroid;
-    } else if (arg == "dnfc") {
-        return Method::DualNormalFaceCentroid;
+    } else if (arg == "dnvp") {
+        return Method::DualNormalVertexPosition;
     } else if (arg == "cnfc") {
         return Method::CorrectedNormalFaceCentroid;
     } else if (arg == "pot") {
@@ -264,7 +264,7 @@ std::string methodToString(const Method& method) {
     switch (method) {
         case TrivialNormalFaceCentroid:
             return "Trivial Normal Face Centroid";
-        case DualNormalFaceCentroid:
+        case DualNormalVertexPosition:
             return "Dual Normal Face Centroid";
         case CorrectedNormalFaceCentroid:
             return "Corrected Normal Face Centroid";
@@ -296,16 +296,16 @@ int main(int argc, char** argv)
 
     auto polyBunny = registerSurface(primalSurface, "bunny");
 
-    for (auto m: {Method::TrivialNormalFaceCentroid, Method::DualNormalFaceCentroid, Method::CorrectedNormalFaceCentroid}) {
+    for (auto m: {Method::TrivialNormalFaceCentroid, Method::DualNormalVertexPosition, Method::CorrectedNormalFaceCentroid}) {
         auto varifolds = computeVarifolds(binImage, surface, radius, distribType, m);
 
-        auto nbElements = m == Method::DualNormalFaceCentroid ? primalSurface.nbVertices() : primalSurface.nbFaces();
+        auto nbElements = m == Method::DualNormalVertexPosition ? primalSurface.nbVertices() : primalSurface.nbFaces();
 
         std::vector<RealVector> lcs;
         for (auto i = 0; i < nbElements; i++) {
             lcs.push_back(varifolds[i].curvature);
         }
-        if (m == Method::DualNormalFaceCentroid) {
+        if (m == Method::DualNormalVertexPosition) {
             polyBunny->addVertexVectorQuantity(methodToString(m) + " Local Curvatures", lcs);
         } else {
             polyBunny->addFaceVectorQuantity(methodToString(m) + " Local Curvatures", lcs);
@@ -315,7 +315,7 @@ int main(int argc, char** argv)
         for (auto i = 0; i < nbElements; i++) {
             lcsNorm.push_back(varifolds[i].planeNormal.dot(varifolds[i].curvature) > 0 ? varifolds[i].curvature.norm() : -varifolds[i].curvature.norm());
         }
-        if (m == Method::DualNormalFaceCentroid) {
+        if (m == Method::DualNormalVertexPosition) {
             for (auto i = 0; i < nbElements; i++) {
                 auto position = primalSurface.position(i);
                 auto sum = 0.;
@@ -346,7 +346,7 @@ int main(int argc, char** argv)
             const auto color = lcsNorm[i] < 0 ? colormap.first(lcsNorm[i]) : colormap.second(lcsNorm[i]);
             colorLcsNorm.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
         }
-        if (m == Method::DualNormalFaceCentroid) {
+        if (m == Method::DualNormalVertexPosition) {
             polyBunny->addVertexColorQuantity(methodToString(m) + " Local Curvatures Norm", colorLcsNorm);
         } else {
             polyBunny->addFaceColorQuantity(methodToString(m) + " Local Curvatures Norm", colorLcsNorm);

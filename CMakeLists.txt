@@ -21,11 +21,11 @@ set (SRCS
 )
 
 
-add_executable(project "${SRCS}")
-target_link_libraries(project polyscope)
+add_executable(varifoldApproach "${SRCS}")
+target_link_libraries(varifoldApproach polyscope)
 
 FIND_PACKAGE(DGtal REQUIRED)
 INCLUDE_DIRECTORIES(${DGTAL_INCLUDE_DIRS})
 LINK_DIRECTORIES(${DGTAL_LIBRARY_DIRS})
 
-TARGET_LINK_LIBRARIES(project ${DGTAL_LIBRARIES})
+TARGET_LINK_LIBRARIES(varifoldApproach ${DGTAL_LIBRARIES})
