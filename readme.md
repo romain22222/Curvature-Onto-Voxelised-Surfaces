@@ -114,6 +114,5 @@ Here are some results obtained with the program:
 
 ## Next steps
 
-- Use CNC to quickly compute the meaningful points of interest
 - Implement the possibility of using an implicit function to create the object
 - Implement quantification of the error between the computed curvature and the real curvature (on computed objects with known curvature)

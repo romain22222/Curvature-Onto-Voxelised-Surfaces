@@ -10,6 +10,8 @@
 #include "polyscope/polyscope.h"
 #include "polyscope/surface_mesh.h"
 
+#include "externalLibs/LinearKDTree.h"
+
 using namespace DGtal;
 using namespace DGtal::Z3i;
 typedef Shortcuts<KSpace>         SH3;
@@ -106,11 +108,11 @@ public:
     std::function<double(double)> measureFunction;
     std::function<double(double)> measureFunctionDerivate;
 
-    std::vector<std::pair<double,double>> operator()(const SH3::RealPoints& mesh) const {
+    std::vector<std::pair<double,double>> operator()(const SH3::RealPoints& mesh, const std::vector<size_t>& poi) const {
         std::vector<std::pair<double,double>> wf;
-        for (const auto& b : mesh) {
+        for (const auto& b : poi) {
             // If the face is inside the radius, compute the weight
-            const auto d = (b - center).norm();
+            const auto d = (mesh[b] - center).norm();
             if (d < radius) {
                 wf.emplace_back(measureFunction(d / radius), measureFunctionDerivate(d / radius));
             } else {
@@ -177,17 +179,20 @@ std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::BinaryImage>
             return curvatures;
     }
 
+    auto kdTree = LinearKDTree<RealPoint, 3>(positions);
+    std::vector<size_t> indices;
     for (auto f = 0; f < nbElements; ++f) {
         tmpSumTop = RealVector();
         tmpSumBottom = 0;
-        const auto b = positions[f];
+        const auto b = kdTree.position(f);
         rd = RadialDistance(b, cRadius, cDistribType);
-        weights = rd(positions);
-        for (auto otherF = 0; otherF < nbElements; ++otherF) {
+        indices = kdTree.pointsInBall(b, cRadius);
+        weights = rd(positions, indices);
+        for (auto otherF = 0; otherF < weights.size(); ++otherF) {
             if (weights[otherF].first > 0) {
-                if (f != otherF) {
-                    tmpVector = positions[otherF] - b;
-                    tmpSumTop += weights[otherF].first * projection(tmpVector, normals[otherF])/tmpVector.norm();
+                if (f != indices[otherF]) {
+                    tmpVector = positions[indices[otherF]] - b;
+                    tmpSumTop += weights[otherF].first * projection(tmpVector, normals[indices[otherF]])/tmpVector.norm();
                 }
                 tmpSumBottom += weights[otherF].first;
             }
