@@ -16,12 +16,15 @@ FetchContent_Declare(polyscope
 
 FetchContent_MakeAvailable(polyscope)
 
-set (SRCS
+set (SRCSVA
         main.cpp
 )
 
+set (SRCSEVAL
+        evaluateShape.cpp
+)
 
-add_executable(varifoldApproach "${SRCS}")
+add_executable(varifoldApproach "${SRCSVA}")
 target_link_libraries(varifoldApproach polyscope)
 
 FIND_PACKAGE(DGtal REQUIRED)
@@ -29,3 +32,7 @@ INCLUDE_DIRECTORIES(${DGTAL_INCLUDE_DIRS})
 LINK_DIRECTORIES(${DGTAL_LIBRARY_DIRS})
 
 TARGET_LINK_LIBRARIES(varifoldApproach ${DGTAL_LIBRARIES})
+
+add_executable(evaluate "${SRCSEVAL}")
+target_link_libraries(evaluate polyscope)
+TARGET_LINK_LIBRARIES(evaluate ${DGTAL_LIBRARIES})
