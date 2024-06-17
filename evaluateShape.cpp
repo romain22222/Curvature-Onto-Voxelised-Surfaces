@@ -63,7 +63,7 @@ int main( int argc, char* argv[] )
 
     // Read polynomial and build digital surface
     auto params = SH::defaultParameters() | SHG::defaultParameters();
-    params( "t-ring", 3 )( "surfaceTraversal", "Default" );
+    params( "t-ring", 6 )( "surfaceTraversal", "Default" );
     params( "polynomial", poly )( "gridstep", h );
     params( "minAABB", -B )( "maxAABB", B );
     params( "offset", 3.0 );
@@ -128,9 +128,9 @@ int main( int argc, char* argv[] )
 
     for ( auto f = 0; f < varifolds.size(); ++f )
     {
-//        const auto b    = smesh.faceCentroid( f );
-//        const auto area = mu0.measure( b, R, f );
-//        H_CNC[ f ] = cnc.meanCurvature    ( area, mu1.measure( b, R, f ) );
+        const auto b    = smesh.faceCentroid( f );
+        const auto area = mu0.measure( b, R, f );
+        H_CNC[ f ] = cnc.meanCurvature    ( area, mu1.measure( b, R, f ) );
 //        G_CNC[ f ] = cnc.GaussianCurvature( area, mu2.measure( b, R, f ) );
 
         H[ f ] = varifolds[f].curvature.norm();
@@ -213,7 +213,11 @@ int main( int argc, char* argv[] )
         colorErrorH.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
     }
 
-    polysurf->addFaceColorQuantity("Error H He-H", colorErrorH);
+    //polysurf->addFaceColorQuantity("Error H He-H", colorErrorH);
+    polysurf->addFaceScalarQuantity("Computed H", H );
+    polysurf->addFaceScalarQuantity("True H", exp_H );
+    polysurf->addFaceScalarQuantity("CNC H", H_CNC );
+    polysurf->addFaceScalarQuantity("Error H He-H", error_H );
     polyscope::show();
 
 
