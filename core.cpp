@@ -203,7 +203,7 @@ std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::BinaryImage>
     return curvatures;
 }
 
-std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method) {
+std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0) {
     std::vector<Varifold> varifolds;
 
     auto ps = *SH3::makePrimalSurfaceMesh(surface);
@@ -237,7 +237,9 @@ std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimag
         default:
             break;
     }
-
+    std::transform(varifolds.begin(), varifolds.end(), varifolds.begin(), [&gridStep](const Varifold& v) {
+        return Varifold(v.position, v.planeNormal, 0.5*v.curvature / gridStep);
+    });
     return varifolds;
 }
 

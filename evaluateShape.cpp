@@ -60,6 +60,7 @@ int main( int argc, char* argv[] )
     const double    R = argc > 4 ? atof( argv[ 4 ] ) : 2.0; // radius of measuring ball
     const auto kernel = argc > 5 ? argToDistribType( argv[ 5 ] ) : DistributionType::HalfSphere;
     const auto method = argc > 6 ? argToMethod( argv[ 6 ] ) : Method::CorrectedNormalFaceCentroid;
+    const auto checkCNC = argc > 7 && std::strcmp(argv[7],"y") == 0;
 
     // Read polynomial and build digital surface
     auto params = SH::defaultParameters() | SHG::defaultParameters();
@@ -105,41 +106,16 @@ int main( int argc, char* argv[] )
     auto polysurf = registerSurface(smesh, "studied mesh");
 
 
-    std::vector<Varifold> varifolds = computeVarifolds(bimage, surface, R, kernel, method);
+    std::vector<Varifold> varifolds = computeVarifolds(bimage, surface, R, kernel, method, h);
 
     auto exp_H = SHG::getMeanCurvatures( shape, K, surfels, params );
     auto exp_G = SHG::getGaussianCurvatures( shape, K, surfels, params );
-    // Builds a CorrectedNormalCurrentComputer object onto the SurfaceMesh object
-    CNC cnc( smesh );
-    // Estimates normal vectors using Convolved Trivial Normal estimator
-    auto face_normals = SHG::getCTrivialNormalVectors( surface, surfels, params );
-    // Set corrected face normals => Corrected Normal Current with
-    // constant per face corrected vector field.
-    smesh.setFaceNormals( face_normals.cbegin(), face_normals.cend() ); // CCNC
-    // computes area, mean and Gaussian curvature measures
-    auto mu0 = cnc.computeMu0();
-    auto mu1 = cnc.computeMu1();
-    auto mu2 = cnc.computeMu2();
-    // estimates mean (H) and Gaussian (G) curvatures by measure normalization.
+
     std::vector< double > H = computeSignedNorms(smesh, varifolds, method);
     std::vector< double > G( varifolds.size() );
-    std::vector< double > H_CNC( varifolds.size() );
-    std::vector< double > G_CNC( varifolds.size() );
-
-    for ( auto f = 0; f < varifolds.size(); ++f )
-    {
-        const auto b    = smesh.faceCentroid( f );
-        const auto area = mu0.measure( b, R, f );
-        H_CNC[ f ] = cnc.meanCurvature    ( area, mu1.measure( b, R, f ) );
-//        G_CNC[ f ] = cnc.GaussianCurvature( area, mu2.measure( b, R, f ) );
-
-        G[ f ] = 0; // for the moment, we do not compute Gaussian curvature
-    }
 
     auto H_min_max = std::minmax_element( H.cbegin(), H.cend() );
     auto G_min_max = std::minmax_element( G.cbegin(), G.cend() );
-    auto H_CNC_min_max = std::minmax_element( H_CNC.cbegin(), H_CNC.cend() );
-    auto G_CNC_min_max = std::minmax_element( G_CNC.cbegin(), G_CNC.cend() );
     auto exp_H_min_max = std::minmax_element( exp_H.cbegin(), exp_H.cend() );
     auto exp_G_min_max = std::minmax_element( exp_G.cbegin(), exp_G.cend() );
     std::cout << "Expected mean curvatures:"
@@ -148,38 +124,23 @@ int main( int argc, char* argv[] )
     std::cout << "Computed mean curvatures:"
               << " min=" << *H_min_max.first << " max=" << *H_min_max.second
               << std::endl;
-//    std::cout << "CNC computed mean curvatures:"
-//              << " min=" << *H_CNC_min_max.first << " max=" << *H_CNC_min_max.second
-//              << std::endl;
     std::cout << "Expected Gaussian curvatures:"
               << " min=" << *exp_G_min_max.first << " max=" << *exp_G_min_max.second
               << std::endl;
     std::cout << "Computed Gaussian curvatures:"
               << " min=" << *G_min_max.first << " max=" << *G_min_max.second
               << std::endl;
-//    std::cout << "CNC computed Gaussian curvatures:"
-//              << " min=" << *G_CNC_min_max.first << " max=" << *G_CNC_min_max.second
-//              << std::endl;
+
     const auto      error_H = SHG::getScalarsAbsoluteDifference( H, exp_H );
-//    const auto      error_H_CNC = SHG::getScalarsAbsoluteDifference( H_CNC, exp_H );
     const auto stat_error_H = SHG::getStatistic( error_H );
-//    const auto stat_error_H_CNC = SHG::getStatistic( error_H_CNC );
     const auto   error_H_l2 = SHG::getScalarsNormL2( H, exp_H );
-//    const auto   error_H_CNC_l2 = SHG::getScalarsNormL2( H_CNC, exp_H );
     trace.info() << "|He-H|_oo = " << stat_error_H.max() << std::endl;
     trace.info() << "|He-H|_2  = " << error_H_l2 << std::endl;
-//    trace.info() << "|He-H_CNC|_oo = " << stat_error_H_CNC.max() << std::endl;
-//    trace.info() << "|He-H_CNC|_2  = " << error_H_CNC_l2 << std::endl;
     const auto      error_G = SHG::getScalarsAbsoluteDifference( G, exp_G );
-//    const auto      error_G_CNC = SHG::getScalarsAbsoluteDifference( G_CNC, exp_G );
     const auto stat_error_G = SHG::getStatistic( error_G );
-//    const auto stat_error_G_CNC = SHG::getStatistic( error_G_CNC );
     const auto   error_G_l2 = SHG::getScalarsNormL2( G, exp_G );
-//    const auto   error_G_CNC_l2 = SHG::getScalarsNormL2( G_CNC, exp_G );
     trace.info() << "|Ge-G|_oo = " << stat_error_G.max() << std::endl;
     trace.info() << "|Ge-G|_2  = " << error_G_l2 << std::endl;
-//    trace.info() << "|Ge-G_CNC|_oo = " << stat_error_G_CNC.max() << std::endl;
-//    trace.info() << "|Ge-G_CNC|_2  = " << error_G_CNC_l2 << std::endl;
 
     // Remove normals for better blocky display.
     smesh.vertexNormals() = SH::RealVectors();
@@ -202,19 +163,53 @@ int main( int argc, char* argv[] )
     SMW::writeOBJ( "example-cnc-H", smesh, colorsH );
     SMW::writeOBJ( "example-cnc-G", smesh, colorsG );
 
-    auto minmax = std::minmax_element( error_H.begin(), error_H.end());
-    const auto cmap = makeColorMap( *minmax.first, *minmax.second);
 
-    std::vector<std::vector<double>> colorErrorH;
-    for (auto i = 0; i < varifolds.size(); i++) {
-        const auto color = error_H[i] < 0 ? cmap.first(error_H[i]) : cmap.second(error_H[i]);
-        colorErrorH.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
+    if (checkCNC) {
+        // Builds a CorrectedNormalCurrentComputer object onto the SurfaceMesh object
+        CNC cnc(smesh);
+        // Estimates normal vectors using Convolved Trivial Normal estimator
+        auto face_normals = SHG::getCTrivialNormalVectors(surface, surfels, params);
+        // Set corrected face normals => Corrected Normal Current with
+        // constant per face corrected vector field.
+        smesh.setFaceNormals(face_normals.cbegin(), face_normals.cend()); // CCNC
+        // computes area, mean and Gaussian curvature measures
+        auto mu0 = cnc.computeMu0();
+        auto mu1 = cnc.computeMu1();
+        auto mu2 = cnc.computeMu2();
+        // estimates mean (H) and Gaussian (G) curvatures by measure normalization.
+        std::vector<double> H_CNC(varifolds.size());
+        std::vector<double> G_CNC(varifolds.size());
+
+        for (auto f = 0; f < varifolds.size(); ++f) {
+            const auto b = smesh.faceCentroid(f);
+            const auto area = mu0.measure(b, R, f);
+            H_CNC[f] = cnc.meanCurvature(area, mu1.measure(b, R, f));
+            G_CNC[ f ] = cnc.GaussianCurvature( area, mu2.measure( b, R, f ) );
+        }
+        auto H_CNC_min_max = std::minmax_element( H_CNC.cbegin(), H_CNC.cend() );
+        auto G_CNC_min_max = std::minmax_element( G_CNC.cbegin(), G_CNC.cend() );
+        std::cout << "CNC computed mean curvatures:"
+                  << " min=" << *H_CNC_min_max.first << " max=" << *H_CNC_min_max.second
+                  << std::endl;
+        std::cout << "CNC computed Gaussian curvatures:"
+                  << " min=" << *G_CNC_min_max.first << " max=" << *G_CNC_min_max.second
+                  << std::endl;
+        const auto      error_H_CNC = SHG::getScalarsAbsoluteDifference( H_CNC, exp_H );
+        const auto stat_error_H_CNC = SHG::getStatistic( error_H_CNC );
+        const auto   error_H_CNC_l2 = SHG::getScalarsNormL2( H_CNC, exp_H );
+        trace.info() << "|He-H_CNC|_oo = " << stat_error_H_CNC.max() << std::endl;
+        trace.info() << "|He-H_CNC|_2  = " << error_H_CNC_l2 << std::endl;
+        const auto      error_G_CNC = SHG::getScalarsAbsoluteDifference( G_CNC, exp_G );
+        const auto stat_error_G_CNC = SHG::getStatistic( error_G_CNC );
+        const auto   error_G_CNC_l2 = SHG::getScalarsNormL2( G_CNC, exp_G );
+        trace.info() << "|Ge-G_CNC|_oo = " << stat_error_G_CNC.max() << std::endl;
+        trace.info() << "|Ge-G_CNC|_2  = " << error_G_CNC_l2 << std::endl;
+        polysurf->addFaceScalarQuantity("CNC H", H_CNC );
     }
 
     //polysurf->addFaceColorQuantity("Error H He-H", colorErrorH);
     polysurf->addFaceScalarQuantity("Computed H", H );
     polysurf->addFaceScalarQuantity("True H", exp_H );
-    polysurf->addFaceScalarQuantity("CNC H", H_CNC );
     polysurf->addFaceScalarQuantity("Error H He-H", error_H );
     polyscope::show();
 
