@@ -60,7 +60,7 @@ int main( int argc, char* argv[] )
     const double    R = argc > 4 ? atof( argv[ 4 ] ) : 2.0; // radius of measuring ball
     const auto kernel = argc > 5 ? argToDistribType( argv[ 5 ] ) : DistributionType::HalfSphere;
     const auto method = argc > 6 ? argToMethod( argv[ 6 ] ) : Method::CorrectedNormalFaceCentroid;
-    const auto checkCNC = argc > 7 && std::strcmp(argv[7],"y") == 0;
+    const auto checkCNC = argc > 7;
 
     // Read polynomial and build digital surface
     auto params = SH::defaultParameters() | SHG::defaultParameters();
