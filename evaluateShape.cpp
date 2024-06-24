@@ -121,7 +121,7 @@ int main( int argc, char* argv[] )
     auto mu1 = cnc.computeMu1();
     auto mu2 = cnc.computeMu2();
     // estimates mean (H) and Gaussian (G) curvatures by measure normalization.
-    std::vector< double > H( varifolds.size() );
+    std::vector< double > H = computeSignedNorms(smesh, varifolds, method);
     std::vector< double > G( varifolds.size() );
     std::vector< double > H_CNC( varifolds.size() );
     std::vector< double > G_CNC( varifolds.size() );
@@ -133,15 +133,13 @@ int main( int argc, char* argv[] )
         H_CNC[ f ] = cnc.meanCurvature    ( area, mu1.measure( b, R, f ) );
 //        G_CNC[ f ] = cnc.GaussianCurvature( area, mu2.measure( b, R, f ) );
 
-        H[ f ] = varifolds[f].curvature.norm();
-
         G[ f ] = 0; // for the moment, we do not compute Gaussian curvature
     }
 
     auto H_min_max = std::minmax_element( H.cbegin(), H.cend() );
     auto G_min_max = std::minmax_element( G.cbegin(), G.cend() );
-//    auto H_CNC_min_max = std::minmax_element( H_CNC.cbegin(), H_CNC.cend() );
-//    auto G_CNC_min_max = std::minmax_element( G_CNC.cbegin(), G_CNC.cend() );
+    auto H_CNC_min_max = std::minmax_element( H_CNC.cbegin(), H_CNC.cend() );
+    auto G_CNC_min_max = std::minmax_element( G_CNC.cbegin(), G_CNC.cend() );
     auto exp_H_min_max = std::minmax_element( exp_H.cbegin(), exp_H.cend() );
     auto exp_G_min_max = std::minmax_element( exp_G.cbegin(), exp_G.cend() );
     std::cout << "Expected mean curvatures:"

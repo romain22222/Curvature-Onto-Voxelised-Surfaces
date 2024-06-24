@@ -87,10 +87,10 @@ public:
                 break;
             case DistributionType::Cone:
                 measureFunction = [](double dRatio) {
-                    return (1-dRatio) * M_PI/12.;
+                    return (1-dRatio) * M_PI/3.;
                 };
                 measureFunctionDerivate = [](double dRatio) {
-                    return -M_PI/12.;
+                    return -M_PI/3.;
                 };
                 break;
             case DistributionType::HalfSphere:
@@ -192,7 +192,7 @@ std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::BinaryImage>
             if (weights[otherF].first > 0) {
                 if (f != indices[otherF]) {
                     tmpVector = positions[indices[otherF]] - b;
-                    tmpSumTop += weights[otherF].first * projection(tmpVector, normals[indices[otherF]])/tmpVector.norm();
+                    tmpSumTop += weights[otherF].second * projection(tmpVector, normals[indices[otherF]])/tmpVector.norm();
                 }
                 tmpSumBottom += weights[otherF].first;
             }
@@ -280,4 +280,36 @@ std::string methodToString(const Method& method) {
         default:
             return "Unknown";
     }
+}
+
+
+std::vector<double> computeSignedNorms(const SH3::SurfaceMesh& primalSurface, const std::vector<Varifold>& varifolds, const Method& m)
+{
+    std::vector<double> lcsNorm;
+    for (const auto & varifold : varifolds) {
+        lcsNorm.push_back(varifold.planeNormal.dot(varifold.curvature) > 0 ? -varifold.curvature.norm() : varifold.curvature.norm());
+    }
+    if (m == Method::DualNormalVertexPosition) {
+        for (auto i = 0; i < varifolds.size(); i++) {
+            const auto& position = primalSurface.position(i);
+            auto sum = 0.;
+            for (auto f = 0; f < varifolds.size(); f++) {
+                if (f != i && primalSurface.vertexInclusionRatio(position, 1, f) > 0) {
+                    sum += lcsNorm[f];
+                }
+            }
+            lcsNorm[i] = abs(lcsNorm[i]) * (sum < 0 ? -1 : 1);
+        }
+    } else {
+        for (auto i = 0; i < varifolds.size(); i++) {
+            auto sum = 0.;
+            for (auto f: primalSurface.computeFacesInclusionsInBall(1, i)) {
+                if (f.second > 0) {
+                    sum += lcsNorm[f.first];
+                }
+            }
+            lcsNorm[i] = abs(lcsNorm[i]) * (sum < 0 ? -1 : 1);
+        }
+    }
+    return lcsNorm;
 }

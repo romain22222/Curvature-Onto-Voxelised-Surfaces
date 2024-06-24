@@ -32,32 +32,8 @@ int main(int argc, char** argv)
             polyBunny->addFaceVectorQuantity(methodToString(m) + " Local Curvatures", lcs);
         }
 
-        std::vector<double> lcsNorm;
-        for (auto i = 0; i < nbElements; i++) {
-            lcsNorm.push_back(varifolds[i].planeNormal.dot(varifolds[i].curvature) > 0 ? varifolds[i].curvature.norm() : -varifolds[i].curvature.norm());
-        }
-        if (m == Method::DualNormalVertexPosition) {
-            for (auto i = 0; i < nbElements; i++) {
-                auto position = primalSurface.position(i);
-                auto sum = 0.;
-                for (auto f = 0; f < nbElements; f++) {
-                    if (f != i && primalSurface.vertexInclusionRatio(position, 1, f) > 0) {
-                        sum += lcsNorm[f];
-                    }
-                }
-                lcsNorm[i] = abs(lcsNorm[i]) * (sum < 0 ? -1 : 1);
-            }
-        } else {
-            for (auto i = 0; i < nbElements; i++) {
-                auto sum = 0.;
-                for (auto f: primalSurface.computeFacesInclusionsInBall(1, i)) {
-                    if (f.second > 0) {
-                        sum += lcsNorm[f.first];
-                    }
-                }
-                lcsNorm[i] = abs(lcsNorm[i]) * (sum < 0 ? -1 : 1);
-            }
-        }
+        const auto lcsNorm = computeSignedNorms(primalSurface, varifolds, m);
+
 
         auto minmax = std::minmax_element(lcsNorm.begin(), lcsNorm.end());
         DGtal::trace.info() << "Min: " << *minmax.first << " Max: " << *minmax.second << std::endl;
