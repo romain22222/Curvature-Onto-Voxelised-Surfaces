@@ -8,7 +8,7 @@ int main(int argc, char** argv)
     std::string filename = argc > 1 ? argv[1] : "../DGtalObjects/bunny66.vol";
     double radius = argc > 2 ? std::atof( argv[2] ) : 10.0;
 
-    auto distribType = argc > 3 ? argToDistribType(argv[3]) : DistributionType::HalfSphere;
+    auto distribType = argc > 3 ? argToDistribType(argv[3]) : DistributionType::Polynomial;
 
     auto binImage = SH3::makeBinaryImage(filename, params);
     auto K = SH3::getKSpace(binImage);

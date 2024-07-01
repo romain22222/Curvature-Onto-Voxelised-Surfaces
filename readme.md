@@ -62,9 +62,9 @@ First, we choose what will be the information contained in the varifold. We can 
 - Corrected face normal and face centroid (Method::CorrectedNormalFaceCentroid)
 
 Then, we choose the kernel function. 2nd argument of the program stands for the radius of the sphere in which we will take the points to compute the curvature. 3rd argument of the program gives the kernel function to use. We can choose between the following options:
-- "fd" for the Flat Disc kernel (all the points in the sphere have the same weight)
-- "c" for the Cone kernel (the weight of the points decreases with the distance to the center of the sphere)
-- "hs" for the 4d Sphere kernel (the weight of the points decreases with the square of the distance to the center of the sphere)
+- "l" for the Linear kernel (the weight of the points decreases with the distance to the center of the sphere)
+- "p" for the Polynomial kernel (the weight of the points decreases with the square of the distance to the center of the sphere)
+- "e" for the Exponential kernel (the weight decreases at a bell curve-like rhythm)
 
 The program will then compute the curvature at each point of the object by applying the formula above. The result is then displayed with polyscope.
 

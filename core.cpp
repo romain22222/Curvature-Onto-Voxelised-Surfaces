@@ -66,9 +66,9 @@ public:
 };
 
 typedef enum {
-    FlatDisc,
-    Cone,
-    HalfSphere
+    Linear,
+    Polynomial,
+    Exponential
 } DistributionType;
 
 class RadialDistance {
@@ -77,27 +77,28 @@ public:
     RadialDistance(const RealPoint& center, const double radius, const DistributionType& distribution)
             : center(center), radius(radius) {
         switch (distribution) {
-            case DistributionType::FlatDisc:
-                measureFunction = [](double dRatio) {
-                    return 3./(4*M_PI);
+            case DistributionType::Exponential:
+                measureFunction = [](double dRatio, double a) {
+                    return exp(-a/(1-dRatio*dRatio));
                 };
-                measureFunctionDerivate = [](double dRatio) {
-                    return 0;
-                };
-                break;
-            case DistributionType::Cone:
-                measureFunction = [](double dRatio) {
-                    return (1-dRatio) * M_PI/3.;
-                };
-                measureFunctionDerivate = [](double dRatio) {
-                    return -M_PI/3.;
+                measureFunctionDerivate = [](double dRatio, double a) {
+                    double d = 1-dRatio*dRatio;
+                    return -2*a*dRatio*exp(-a/d)/(d*d);
                 };
                 break;
-            case DistributionType::HalfSphere:
-                measureFunction = [](double dRatio) {
+            case DistributionType::Linear:
+                measureFunction = [](double dRatio, double a) {
+                    return (1-dRatio);
+                };
+                measureFunctionDerivate = [](double dRatio, double a) {
+                    return -1.0;
+                };
+                break;
+            case DistributionType::Polynomial:
+                measureFunction = [](double dRatio, double a) {
                     return (1-dRatio*dRatio)/(M_PI * 2);
                 };
-                measureFunctionDerivate = [](double dRatio) {
+                measureFunctionDerivate = [](double dRatio, double a) {
                     return -dRatio/(M_PI);
                 };
                 break;
@@ -105,16 +106,17 @@ public:
     }
     RealPoint center;
     double radius;
-    std::function<double(double)> measureFunction;
-    std::function<double(double)> measureFunctionDerivate;
+    std::function<double(double, double)> measureFunction;
+    std::function<double(double, double)> measureFunctionDerivate;
 
     std::vector<std::pair<double,double>> operator()(const SH3::RealPoints& mesh, const std::vector<size_t>& poi) const {
         std::vector<std::pair<double,double>> wf;
+        double a = 10.0;
         for (const auto& b : poi) {
             // If the face is inside the radius, compute the weight
             const auto d = (mesh[b] - center).norm();
             if (d < radius) {
-                wf.emplace_back(measureFunction(d / radius), measureFunctionDerivate(d / radius));
+                wf.emplace_back(measureFunction(d / radius, a), measureFunctionDerivate(d / radius, a));
             } else {
                 wf.emplace_back(0., 0.);
             }
@@ -244,12 +246,12 @@ std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimag
 }
 
 DistributionType argToDistribType(const std::string& arg) {
-    if (arg == "fd") {
-        return DistributionType::FlatDisc;
-    } else if (arg == "c") {
-        return DistributionType::Cone;
+    if (arg == "e") {
+        return DistributionType::Exponential;
+    } else if (arg == "l") {
+        return DistributionType::Linear;
     } else {
-        return DistributionType::HalfSphere;
+        return DistributionType::Polynomial;
     }
 }
 

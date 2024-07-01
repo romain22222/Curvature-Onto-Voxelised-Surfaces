@@ -27,7 +27,7 @@ void usage( int argc, char* argv[] )
               << "- <B> defines the digitization space size [-B,B]^3"      << std::endl
               << "- <h> is the gridstep digitization"                      << std::endl
               << "- <R> is the radius of the measuring balls"              << std::endl
-              << "- <kernel> is the kernel used to sample the surface ('fd': flat disc, 'c': cone, 'hs': half sphere)" << std::endl
+              << "- <kernel> is the kernel used to sample the surface ('l': linear, 'p': polynomial, 'e': exponential)" << std::endl
               << "- <method> is the method used to compute the curvature ('tnfc': trivial normal face centroid, 'cnfc': corrected normal face centroid)" << std::endl
               << std::endl
               << "It produces several OBJ files to display mean and"       << std::endl
@@ -58,7 +58,7 @@ int main( int argc, char* argv[] )
     const double    B = argc > 2 ? atof( argv[ 2 ] ) : 1.0; // max ||_oo bbox
     const double    h = argc > 3 ? atof( argv[ 3 ] ) : 1.0; // gridstep
     const double    R = argc > 4 ? atof( argv[ 4 ] ) : 2.0; // radius of measuring ball
-    const auto kernel = argc > 5 ? argToDistribType( argv[ 5 ] ) : DistributionType::HalfSphere;
+    const auto kernel = argc > 5 ? argToDistribType( argv[ 5 ] ) : DistributionType::Polynomial;
     const auto method = argc > 6 ? argToMethod( argv[ 6 ] ) : Method::CorrectedNormalFaceCentroid;
     const auto checkCNC = argc > 7;
 
