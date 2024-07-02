@@ -288,7 +288,13 @@ std::vector<Varifold> computeVarifoldsV2(const CountedPtr<SH3::BinaryImage>& bim
     std::transform(positions.begin(), positions.end(), positions.begin(), [&gridStep](const RealPoint& p) {
         return p * gridStep;
     });
-    return computeVarifoldsFromPositionsAndNormals(positions, normals, cRadius, cDistribType, modifier);
+    auto varifolds = computeVarifoldsFromPositionsAndNormals(positions, normals, cRadius, cDistribType, modifier);
+    if (method == CorrectedNormalFaceCentroid) {
+        for (int i = 0; i < varifolds.size(); ++i) {
+            varifolds[i].curvature = normals[i] * dotProduct(varifolds[i].curvature,normals[i]) / normals[i].squaredNorm();
+        }
+    }
+    return varifolds;
 }
 
 std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0) {
