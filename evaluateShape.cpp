@@ -27,8 +27,10 @@ void usage( int argc, char* argv[] )
               << "- <B> defines the digitization space size [-B,B]^3"      << std::endl
               << "- <h> is the gridstep digitization"                      << std::endl
               << "- <R> is the radius of the measuring balls"              << std::endl
-              << "- <kernel> is the kernel used to sample the surface ('l': linear, 'p': polynomial, 'e': exponential)" << std::endl
+              << "- <kernel> is the kernel used to sample the surface ('l': linear, 'p': polynomial, 'e': exponential, 'c': CNC like)" << std::endl
               << "- <method> is the method used to compute the curvature ('tnfc': trivial normal face centroid, 'cnfc': corrected normal face centroid)" << std::endl
+              << "- If a 7th argument is provided which is not \"TEST\", the corrected normal current is computed and compared to the expected mean and Gaussian curvatures." << std::endl
+              << "- If the 7th argument is \"TEST\", the 8th argument must be provided and will run a test. Please refer to TEST help for more information." << std::endl
               << std::endl
               << "It produces several OBJ files to display mean and"       << std::endl
               << "Gaussian curvature estimation results: `example-cnc-H.obj`" << std::endl
@@ -58,7 +60,7 @@ int main( int argc, char* argv[] )
     const double    B = argc > 2 ? atof( argv[ 2 ] ) : 1.0; // max ||_oo bbox
     const double    h = argc > 3 ? atof( argv[ 3 ] ) : 1.0; // gridstep
     const double    R = argc > 4 ? atof( argv[ 4 ] ) : 2.0; // radius of measuring ball
-    const auto kernel = argc > 5 ? argToDistribType( argv[ 5 ] ) : DistributionType::Polynomial;
+    const auto kernel = argc > 5 ? argToDistribType( argv[ 5 ] ) : DistributionType::Exponential;
     const auto method = argc > 6 ? argToMethod( argv[ 6 ] ) : Method::CorrectedNormalFaceCentroid;
     const auto checkCNC = argc > 7;
 
@@ -104,9 +106,41 @@ int main( int argc, char* argv[] )
     trace.info() << smesh << std::endl;
 
     auto polysurf = registerSurface(smesh, "studied mesh");
+    if (argc > 7 && std::string(argv[7]) == "TEST") {
+        std::string testToDo = argc > 8 ? argv[8] : "help";
+        if (testToDo == "kernel") {
+            auto positions = SH3::RealPoints();
+            for (auto f = 0; f < smesh.nbFaces(); ++f) {
+                positions.push_back(smesh.faceCentroid(f));
+            }
 
+            auto kdTree = LinearKDTree<RealPoint, 3>(positions);
+            auto center = kdTree.position(0);
+            auto rd = RadialDistance(center, R, kernel, atof(argv[9]));
+            auto indices = kdTree.pointsInBall(center, R);
+            auto weights = rd(positions, indices);
+            auto values = std::vector<double>(positions.size(), 0.0);
+            auto derivvalues = std::vector<double>(positions.size(), 0.0);
+            for (auto i = 0; i < indices.size(); ++i) {
+                values[indices[i]] = weights[i].first;
+                derivvalues[indices[i]] = weights[i].second;
+            }
+            polysurf->addFaceScalarQuantity("Radial Distance", values);
+            polysurf->addFaceScalarQuantity("Radial Distance Derivative", derivvalues);
+            polyscope::show();
+        } else {
+            if (testToDo != "help") {
+                std::cout << "Unknown test: " << testToDo << std::endl;
+            }
+            std::cout << "Available tests: " << std::endl
+                    << "- kernel : plot the returned weights of the kernel function centered around the face 0 of the object"
+                    << std::endl;
+        }
 
-    std::vector<Varifold> varifolds = computeVarifolds(bimage, surface, R, kernel, method, h);
+        return 0;
+    }
+
+    std::vector<Varifold> varifolds = computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params);
 
     auto exp_H = SHG::getMeanCurvatures( shape, K, surfels, params );
     auto exp_G = SHG::getGaussianCurvatures( shape, K, surfels, params );
@@ -208,6 +242,16 @@ int main( int argc, char* argv[] )
     }
 
     //polysurf->addFaceColorQuantity("Error H He-H", colorErrorH);
+    SH3::RealVectors curvatures( varifolds.size() );
+    SH3::RealVectors usedNormals( varifolds.size() );
+    for ( auto i = 0; i < varifolds.size(); i++ )
+    {
+        curvatures[ i ] = varifolds[ i ].curvature;
+        usedNormals[ i ] = varifolds[ i ].planeNormal;
+    }
+
+    polysurf->addFaceVectorQuantity("Local Curvature", curvatures);
+    polysurf->addFaceVectorQuantity("Used Normals", usedNormals);
     polysurf->addFaceScalarQuantity("Computed H", H );
     polysurf->addFaceScalarQuantity("True H", exp_H );
     polysurf->addFaceScalarQuantity("Error H He-H", error_H );

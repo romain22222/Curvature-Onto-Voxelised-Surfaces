@@ -68,55 +68,65 @@ public:
 typedef enum {
     Linear,
     Polynomial,
-    Exponential
+    Exponential,
+    CNCLike
 } DistributionType;
 
 class RadialDistance {
 public:
-    RadialDistance(): center(0,0,0), radius(1) {};
-    RadialDistance(const RealPoint& center, const double radius, const DistributionType& distribution)
-            : center(center), radius(radius) {
+    RadialDistance(): center(0,0,0), radius(1), modifier(5.0) {};
+    RadialDistance(const RealPoint& center, const double radius, const DistributionType& distribution, const double modifier = 5.0)
+            : center(center), radius(radius), modifier(modifier) {
         switch (distribution) {
             case DistributionType::Exponential:
-                measureFunction = [](double dRatio, double a) {
-                    return exp(-a/(1-dRatio*dRatio));
+                // TODO : comprendre pourquoi le modifier merde lors du calcul de courbure, MAIS PAS quand on affiche le kernel
+                measureFunction = [](double dRatio) {
+                    return exp(-5.0/(1-dRatio*dRatio));
                 };
-                measureFunctionDerivate = [](double dRatio, double a) {
+                measureFunctionDerivate = [](double dRatio) {
                     double d = 1-dRatio*dRatio;
-                    return -2*a*dRatio*exp(-a/d)/(d*d);
+                    return -2*5.0*dRatio*exp(-5.0/d)/(d*d);
                 };
                 break;
             case DistributionType::Linear:
-                measureFunction = [](double dRatio, double a) {
+                measureFunction = [](double dRatio) {
                     return (1-dRatio);
                 };
-                measureFunctionDerivate = [](double dRatio, double a) {
+                measureFunctionDerivate = [](double dRatio) {
                     return -1.0;
                 };
                 break;
             case DistributionType::Polynomial:
-                measureFunction = [](double dRatio, double a) {
+                measureFunction = [](double dRatio) {
                     return (1-dRatio*dRatio)/(M_PI * 2);
                 };
-                measureFunctionDerivate = [](double dRatio, double a) {
+                measureFunctionDerivate = [](double dRatio) {
                     return -dRatio/(M_PI);
+                };
+                break;
+            case DistributionType::CNCLike:
+                measureFunction = [](double dRatio) {
+                    return (1.-tanh(50.*(dRatio-0.9)))/2.;
+                };
+                measureFunctionDerivate = [](double dRatio) {
+                    return 25.*tanh(50.*(dRatio-0.9))*tanh(50.*(dRatio-0.9)) - 25.;
                 };
                 break;
         }
     }
     RealPoint center;
     double radius;
-    std::function<double(double, double)> measureFunction;
-    std::function<double(double, double)> measureFunctionDerivate;
+    double modifier;
+    std::function<double(double)> measureFunction;
+    std::function<double(double)> measureFunctionDerivate;
 
     std::vector<std::pair<double,double>> operator()(const SH3::RealPoints& mesh, const std::vector<size_t>& poi) const {
         std::vector<std::pair<double,double>> wf;
-        double a = 10.0;
         for (const auto& b : poi) {
             // If the face is inside the radius, compute the weight
             const auto d = (mesh[b] - center).norm();
             if (d < radius) {
-                wf.emplace_back(measureFunction(d / radius, a), measureFunctionDerivate(d / radius, a));
+                wf.emplace_back(measureFunction(d / radius), measureFunctionDerivate(d / radius));
             } else {
                 wf.emplace_back(0., 0.);
             }
@@ -205,6 +215,82 @@ std::vector<RealVector> computeLocalCurvature(const CountedPtr<SH3::BinaryImage>
     return curvatures;
 }
 
+std::vector<Varifold> computeVarifoldsFromPositionsAndNormals(
+        const SH3::RealPoints& positions,
+        const SH3::RealVectors& normals,
+        const double cRadius,
+        const DistributionType cDistribType,
+        const double modifier) {
+    auto kdTree = LinearKDTree<RealPoint, 3>(positions);
+    std::vector<size_t> indices;
+    RealVector tmpSumTop;
+    double tmpSumBottom;
+    RadialDistance rd;
+    std::vector<std::pair<double, double>> weights;
+    RealVector tmpVector;
+    std::vector<RealVector> curvatures (positions.size());
+
+    for (auto f = 0; f < positions.size(); ++f) {
+        tmpSumTop = RealVector();
+        tmpSumBottom = 0;
+        const auto b = kdTree.position(f);
+        rd = RadialDistance(b, cRadius, cDistribType, modifier);
+        indices = kdTree.pointsInBall(b, cRadius);
+        weights = rd(positions, indices);
+        for (auto otherF = 0; otherF < weights.size(); ++otherF) {
+            if (weights[otherF].first > 0) {
+                if (f != indices[otherF]) {
+                    tmpVector = positions[indices[otherF]] - b;
+                    tmpSumTop += weights[otherF].second * projection(tmpVector, normals[indices[otherF]])/tmpVector.norm();
+                }
+                tmpSumBottom += weights[otherF].first;
+            }
+        }
+        curvatures[f] = -tmpSumTop/(tmpSumBottom*cRadius);
+    }
+    std::vector<Varifold> varifolds;
+    for (auto f = 0; f < positions.size(); ++f) {
+        varifolds.emplace_back(positions[f], normals[f], .5*curvatures[f]);
+    }
+    return varifolds;
+}
+
+std::vector<Varifold> computeVarifoldsV2(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0, const double modifier = 5.0, const Parameters& params = SHG3::defaultParameters()) {
+    auto ps = *SH3::makePrimalSurfaceMesh(surface);
+    SH3::RealPoints positions;
+    SH3::RealVectors normals;
+    switch (method) {
+        case TrivialNormalFaceCentroid:
+            ps.computeFaceNormalsFromPositions();
+            normals = ps.faceNormals();
+            for (auto f = 0; f < ps.nbFaces(); ++f) {
+                positions.push_back(ps.faceCentroid(f));
+            }
+            break;
+        case DualNormalVertexPosition:
+            ps.computeFaceNormalsFromPositions();
+            ps.computeVertexNormalsFromFaceNormals();
+            for (auto v = 0; v < ps.nbVertices(); ++v) {
+                positions.push_back(ps.position(v));
+                normals.push_back(ps.vertexNormal(v));
+            }
+            break;
+        case CorrectedNormalFaceCentroid:
+            ps.computeFaceNormalsFromPositions();
+            normals = SHG3::getIINormalVectors(bimage, SH3::getSurfelRange(surface), params);
+            for (auto f = 0; f < ps.nbFaces(); ++f) {
+                positions.push_back(ps.faceCentroid(f));
+            }
+            break;
+        default:
+            break;
+    }
+    std::transform(positions.begin(), positions.end(), positions.begin(), [&gridStep](const RealPoint& p) {
+        return p * gridStep;
+    });
+    return computeVarifoldsFromPositionsAndNormals(positions, normals, cRadius * gridStep, cDistribType, modifier);
+}
+
 std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0) {
     std::vector<Varifold> varifolds;
 
@@ -250,9 +336,10 @@ DistributionType argToDistribType(const std::string& arg) {
         return DistributionType::Exponential;
     } else if (arg == "l") {
         return DistributionType::Linear;
-    } else {
+    } else if (arg == "p") {
         return DistributionType::Polynomial;
     }
+    return DistributionType::CNCLike;
 }
 
 Method argToMethod(const std::string& arg) {
