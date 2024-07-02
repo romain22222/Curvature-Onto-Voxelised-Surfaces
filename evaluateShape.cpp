@@ -116,7 +116,7 @@ int main( int argc, char* argv[] )
 
             auto kdTree = LinearKDTree<RealPoint, 3>(positions);
             auto center = kdTree.position(0);
-            auto rd = RadialDistance(center, R, kernel, atof(argv[9]));
+            auto rd = RadialDistance(center, R, kernel/*, atof(argv[9])*/);
             auto indices = kdTree.pointsInBall(center, R);
             auto weights = rd(positions, indices);
             auto values = std::vector<double>(positions.size(), 0.0);

@@ -288,7 +288,7 @@ std::vector<Varifold> computeVarifoldsV2(const CountedPtr<SH3::BinaryImage>& bim
     std::transform(positions.begin(), positions.end(), positions.begin(), [&gridStep](const RealPoint& p) {
         return p * gridStep;
     });
-    return computeVarifoldsFromPositionsAndNormals(positions, normals, cRadius * gridStep, cDistribType, modifier);
+    return computeVarifoldsFromPositionsAndNormals(positions, normals, cRadius, cDistribType, modifier);
 }
 
 std::vector<Varifold> computeVarifolds(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0) {
