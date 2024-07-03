@@ -11,7 +11,7 @@
 #include "DGtal/io/colormaps/QuantifiedColorMap.h"
 #include "core.cpp"
 
-void usage( int argc, char* argv[] )
+void usage(char *argv[])
 {
     using namespace DGtal;
     using namespace DGtal::Z3i;
@@ -47,7 +47,7 @@ int main( int argc, char* argv[] )
     polyscope::init();
     if ( argc <= 1 )
     {
-        usage( argc, argv );
+        usage(argv);
         return 0;
     }
     using namespace DGtal;
@@ -140,7 +140,13 @@ int main( int argc, char* argv[] )
         return 0;
     }
 
-    std::vector<Varifold> varifolds = computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params);
+    SH3::RealVectors face_normals;
+    if (checkCNC) {
+        face_normals = SHG3::getIINormalVectors(bimage, surfels, params);
+        polysurf->addFaceVectorQuantity("Used Normals", face_normals);
+    }
+
+    std::vector<Varifold> varifolds = computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params, face_normals);
 
     auto exp_H = SHG::getMeanCurvatures( shape, K, surfels, params );
     auto exp_G = SHG::getGaussianCurvatures( shape, K, surfels, params );
@@ -201,10 +207,6 @@ int main( int argc, char* argv[] )
     if (checkCNC) {
         // Builds a CorrectedNormalCurrentComputer object onto the SurfaceMesh object
         CNC cnc(smesh);
-        // Estimates normal vectors using Convolved Trivial Normal estimator
-        auto face_normals = SHG::getCTrivialNormalVectors(surface, surfels, params);
-        // Set corrected face normals => Corrected Normal Current with
-        // constant per face corrected vector field.
         smesh.setFaceNormals(face_normals.cbegin(), face_normals.cend()); // CCNC
         // computes area, mean and Gaussian curvature measures
         auto mu0 = cnc.computeMu0();
@@ -239,6 +241,7 @@ int main( int argc, char* argv[] )
         trace.info() << "|Ge-G_CNC|_oo = " << stat_error_G_CNC.max() << std::endl;
         trace.info() << "|Ge-G_CNC|_2  = " << error_G_CNC_l2 << std::endl;
         polysurf->addFaceScalarQuantity("CNC H", H_CNC );
+        polysurf->addFaceScalarQuantity("Error H He-H_CNC", error_H_CNC );
     }
 
     //polysurf->addFaceColorQuantity("Error H He-H", colorErrorH);

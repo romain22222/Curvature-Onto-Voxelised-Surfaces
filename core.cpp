@@ -255,39 +255,47 @@ std::vector<Varifold> computeVarifoldsFromPositionsAndNormals(
     return varifolds;
 }
 
-std::vector<Varifold> computeVarifoldsV2(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0, const double modifier = 5.0, const Parameters& params = SHG3::defaultParameters()) {
+std::vector<Varifold> computeVarifoldsV2(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0, const double modifier = 5.0, const Parameters& params = SHG3::defaultParameters(), SH3::RealVectors normals = std::vector<RealVector>()) {
     auto ps = *SH3::makePrimalSurfaceMesh(surface);
     SH3::RealPoints positions;
-    SH3::RealVectors normals;
     switch (method) {
         case TrivialNormalFaceCentroid:
-            ps.computeFaceNormalsFromPositions();
-            normals = ps.faceNormals();
+        case CorrectedNormalFaceCentroid:
             for (auto f = 0; f < ps.nbFaces(); ++f) {
-                positions.push_back(ps.faceCentroid(f));
+                positions.push_back(ps.faceCentroid(f) * gridStep);
             }
             break;
         case DualNormalVertexPosition:
-            ps.computeFaceNormalsFromPositions();
-            ps.computeVertexNormalsFromFaceNormals();
             for (auto v = 0; v < ps.nbVertices(); ++v) {
-                positions.push_back(ps.position(v));
-                normals.push_back(ps.vertexNormal(v));
-            }
-            break;
-        case CorrectedNormalFaceCentroid:
-            ps.computeFaceNormalsFromPositions();
-            normals = SHG3::getIINormalVectors(bimage, SH3::getSurfelRange(surface), params);
-            for (auto f = 0; f < ps.nbFaces(); ++f) {
-                positions.push_back(ps.faceCentroid(f));
+                positions.push_back(ps.position(v) * gridStep);
             }
             break;
         default:
             break;
     }
-    std::transform(positions.begin(), positions.end(), positions.begin(), [&gridStep](const RealPoint& p) {
-        return p * gridStep;
-    });
+    if (normals.empty()) {
+        std::cout << "Computing normals" << std::endl;
+        switch (method) {
+            case TrivialNormalFaceCentroid:
+                ps.computeFaceNormalsFromPositions();
+                normals = ps.faceNormals();
+                break;
+            case DualNormalVertexPosition:
+                ps.computeFaceNormalsFromPositions();
+                ps.computeVertexNormalsFromFaceNormals();
+                for (auto v = 0; v < ps.nbVertices(); ++v) {
+                    normals.push_back(ps.vertexNormal(v));
+                }
+                break;
+            case CorrectedNormalFaceCentroid:
+                normals = SHG3::getIINormalVectors(bimage, SH3::getSurfelRange(surface), params);
+                break;
+            default:
+                break;
+        }
+    } else {
+        std::cout << "Using normals from input" << std::endl;
+    }
     auto varifolds = computeVarifoldsFromPositionsAndNormals(positions, normals, cRadius, cDistribType, modifier);
     if (method == CorrectedNormalFaceCentroid) {
         for (int i = 0; i < varifolds.size(); ++i) {
