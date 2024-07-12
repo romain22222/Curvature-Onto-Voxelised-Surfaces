@@ -146,13 +146,21 @@ int main( int argc, char* argv[] )
         polysurf->addFaceVectorQuantity("Used Normals", face_normals);
     }
 
-    std::vector<Varifold> varifolds = computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params, face_normals);
+    bool v3Enabled = B != 40.0;
+
+    std::vector<Varifold> varifolds = v3Enabled
+            ? computeVarifoldsV3(bimage, surface, R, kernel, method, h, 5.0, params, face_normals)
+            : computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params, face_normals);
+
+    std::vector< double > H( varifolds.size() );
+    std::vector< double > G( varifolds.size() );
+    H = computeSignedNorms(smesh, varifolds, method);
+    if (v3Enabled) {
+        G = computeGaussianCurvaturesV3(varifolds);
+    }
 
     auto exp_H = SHG::getMeanCurvatures( shape, K, surfels, params );
     auto exp_G = SHG::getGaussianCurvatures( shape, K, surfels, params );
-
-    std::vector< double > H = computeSignedNorms(smesh, varifolds, method);
-    std::vector< double > G( varifolds.size() );
 
     auto H_min_max = std::minmax_element( H.cbegin(), H.cend() );
     auto G_min_max = std::minmax_element( G.cbegin(), G.cend() );
@@ -185,24 +193,6 @@ int main( int argc, char* argv[] )
     // Remove normals for better blocky display.
     smesh.vertexNormals() = SH::RealVectors();
     smesh.faceNormals()   = SH::RealVectors();
-    typedef SurfaceMeshWriter< RealPoint, RealVector > SMW;
-    const double    Hmax = std::max( fabs( *exp_H_min_max.first ),
-                                     fabs( *exp_H_min_max.second ) );
-    const double    Gmax = std::max( fabs( *exp_G_min_max.first ),
-                                     fabs( *exp_G_min_max.second ) );
-    const auto colormapH = makeQuantifiedColorMap( makeColorMap( -Hmax, Hmax ).first );
-    const auto colormapG = makeQuantifiedColorMap( makeColorMap( -Gmax, Gmax ).first );
-    auto colorsH = SMW::Colors( varifolds.size() );
-    auto colorsG = SMW::Colors( varifolds.size() );
-    for ( auto i = 0; i < varifolds.size(); i++ )
-    {
-        colorsH[ i ] = colormapH( H[ i ] );
-        colorsG[ i ] = colormapG( G[ i ] );
-    }
-
-    SMW::writeOBJ( "example-cnc-H", smesh, colorsH );
-    SMW::writeOBJ( "example-cnc-G", smesh, colorsG );
-
 
     if (checkCNC) {
         // Builds a CorrectedNormalCurrentComputer object onto the SurfaceMesh object
@@ -242,9 +232,12 @@ int main( int argc, char* argv[] )
         trace.info() << "|Ge-G_CNC|_2  = " << error_G_CNC_l2 << std::endl;
         polysurf->addFaceScalarQuantity("CNC H", H_CNC );
         polysurf->addFaceScalarQuantity("Error H He-H_CNC", error_H_CNC );
+        if (v3Enabled) {
+            polysurf->addFaceScalarQuantity("CNC G", G_CNC );
+            polysurf->addFaceScalarQuantity("Error G Ge-G_CNC", error_G_CNC );
+        }
     }
 
-    //polysurf->addFaceColorQuantity("Error H He-H", colorErrorH);
     SH3::RealVectors curvatures( varifolds.size() );
     SH3::RealVectors usedNormals( varifolds.size() );
     for ( auto i = 0; i < varifolds.size(); i++ )
@@ -253,14 +246,18 @@ int main( int argc, char* argv[] )
         usedNormals[ i ] = varifolds[ i ].planeNormal;
     }
 
-    polysurf->addFaceVectorQuantity("Local Curvature", curvatures);
-    polysurf->addFaceVectorQuantity("Used Normals", usedNormals);
+    if (v3Enabled) {
+        polysurf->addFaceScalarQuantity("Computed G", G);
+        polysurf->addFaceScalarQuantity("True G", exp_G);
+        polysurf->addFaceScalarQuantity("Error G Ge-G", error_G);
+    } else {
+        polysurf->addFaceVectorQuantity("Local Curvature", curvatures);
+        polysurf->addFaceVectorQuantity("Used Normals", usedNormals);
+    }
     polysurf->addFaceScalarQuantity("Computed H", H );
     polysurf->addFaceScalarQuantity("True H", exp_H );
     polysurf->addFaceScalarQuantity("Error H He-H", error_H );
     polyscope::show();
-
-
 
     return 0;
 }
