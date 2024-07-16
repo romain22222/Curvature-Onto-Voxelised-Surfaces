@@ -92,11 +92,11 @@ public:
             case DistributionType::Exponential:
                 // TODO : comprendre pourquoi le modifier merde lors du calcul de courbure, MAIS PAS quand on affiche le kernel
                 measureFunction = [](double dRatio) {
-                    return exp(-1.0/(1-dRatio*dRatio));
+                    return dRatio == 1 ? 0 : exp(-1.0/(1-dRatio*dRatio));
                 };
                 measureFunctionDerivate = [](double dRatio) {
                     double d = 1-dRatio*dRatio;
-                    return -2*1.0*dRatio*exp(-1.0/d)/(d*d);
+                    return d == 0 ? 0 : -2*dRatio*exp(-1.0/d)/(d*d);
                 };
                 break;
             case DistributionType::Linear:
@@ -452,30 +452,40 @@ Weights computeWeights(const SH3::RealPoints& positions, const double cRadius, c
     return weights;
 }
 
-typedef std::vector<std::pair<SimpleMatrix<double, 3, 3>, SimpleMatrix<double, 2, 3>>> TangentMatrices;
+typedef std::vector<std::pair<SimpleMatrix<double, 3, 3>, SimpleMatrix<double, 3, 2>>> TangentMatrices;
 
-TangentMatrices computeTangentMatrices(const SH3::RealPoints& positions, const Weights& weights) {
+TangentMatrices
+computeTangentMatrices(const SH3::RealPoints& positions, const Weights& weights, std::vector<PointVector<3, double>>& normals) {
     TangentMatrices matrices;
+    if (!normals.empty()) {
+        for (auto f = 0; f < positions.size(); f++) {
+            const auto t1 = normals[f].crossProduct(RealVector(1,0,0)).norm() > 0 ? normals[f].crossProduct(RealVector(1,0,0)).getNormalized() : normals[f].crossProduct(RealVector(0,1,0)).getNormalized();
+            const auto t2 = normals[f].crossProduct(t1).getNormalized();
+            matrices.emplace_back(SimpleMatrix<double, 3, 3>{normals[f][0], t1[0], t2[0], normals[f][1], t1[1], t2[1], normals[f][2], t1[2], t2[2]}, SimpleMatrix<double, 3, 2>{t1[0], t2[0], t1[1], t2[1], t1[2], t2[2]});
+        }
+        return matrices;
+    }
     auto identity = SimpleMatrix<double, 3, 3>();
     identity.identity();
     for (auto f = 0; f < positions.size(); ++f) {
         const auto& p = positions[f];
         SimpleMatrix<double, 3, 3> M;
         for (auto otherF = 0; otherF < weights[f].first.size(); otherF++) {
-            M += weights[f].second[otherF].first * outerProduct(p - positions[otherF]);
+            M += weights[f].second[otherF].first * outerProduct(p - positions[weights[f].first[otherF]]);
         }
         // compute eigenvalues and eigenvectors
         SimpleMatrix<double, 3, 3> eigvec;
         RealVector eigval;
         EigenDecomposition<3, double>::getEigenDecomposition(M, eigvec, eigval);
-        matrices.emplace_back(identity - outerProduct(eigvec.column(0)), SimpleMatrix<double, 2, 3>{eigvec(1,0), eigvec(2,0), eigvec(1,1), eigvec(2,1), eigvec(1,2), eigvec(2,2)});
+        matrices.emplace_back(identity - outerProduct(eigvec.column(0)), SimpleMatrix<double, 3, 2>{eigvec(1,0), eigvec(2,0), eigvec(1,1), eigvec(2,1), eigvec(1,2), eigvec(2,2)});
+        normals.push_back(eigvec.column(0));
     }
     return matrices;
 }
 
 double stdPairTemp(double t) {
     const auto ratio = 1-t*t;
-    return 2./3. * ((t*t/(ratio*ratio)) * exp(-1./ratio));
+    return ratio == 0 ? 0 : 2. * ((t*t/(ratio*ratio)) * exp(-1./ratio));
 }
 
 std::vector<Varifold> computeVarifoldsV3(const CountedPtr<SH3::BinaryImage>& bimage, const CountedPtr<SH3::DigitalSurface>& surface, const double cRadius, const DistributionType cDistribType, const Method method, const double gridStep = 1.0, const double modifier = 5.0, const Parameters& params = SHG3::defaultParameters(), SH3::RealVectors normals = std::vector<RealVector>()) {
@@ -520,7 +530,7 @@ std::vector<Varifold> computeVarifoldsV3(const CountedPtr<SH3::BinaryImage>& bim
         std::cout << "Using normals from input" << std::endl;
     }
     auto weights = computeWeights(positions, cRadius, cDistribType);
-    auto tgtMatrices = computeTangentMatrices(positions, weights);
+    auto tgtMatrices = computeTangentMatrices(positions, weights, normals);
     std::cout << "Computing varifolds" << std::endl;
     std::vector<SimpleMatrix<double, 2, 2>> sff (positions.size());
     for (auto f = 0; f < positions.size(); ++f) {
@@ -532,13 +542,14 @@ std::vector<Varifold> computeVarifoldsV3(const CountedPtr<SH3::BinaryImage>& bim
 
         for (auto otherF = 0; otherF < weights[f].first.size(); ++otherF) {
             auto dx = (b - positions[weights[f].first[otherF]]);
-            if (dx.norm() == 0 || dx.norm() == 1) {
+            if (dx.norm() == 0) {
                 continue;
             }
-            auto dnormalized = (dx / dx.norm()) * cRadius;
             tmpSumBottom += stdPairTemp(dx.norm()/cRadius);
+            auto dnormalized = (dx / dx.norm());
             const auto T = tgtMatrices[weights[f].first[otherF]].first;
             const auto deltaT = T - T0;
+
             for (auto i = 0; i < 3; ++i) {
                 for (auto j = 0; j < 3; ++j) {
                     for (auto k = 0; k < 3; ++k) {
@@ -551,7 +562,9 @@ std::vector<Varifold> computeVarifoldsV3(const CountedPtr<SH3::BinaryImage>& bim
         // Awaited result : dont work cause dgtal dont support different size of matrix multiplication (3x3 * 3x2)
         // Do the same by hand
 //        sff[f] = tgtMatrices[f].second.transpose() * (bij/(cRadius*tmpSumBottom)) * tgtMatrices[f].second;
+
         bij = bij/(cRadius*tmpSumBottom);
+
         SimpleMatrix<double, 3, 2> tmp;
         for (auto i = 0; i < 3; ++i) {
             for (auto j = 0; j < 2; ++j) {
@@ -561,7 +574,9 @@ std::vector<Varifold> computeVarifoldsV3(const CountedPtr<SH3::BinaryImage>& bim
                 }
             }
         }
-        sff[f] = tgtMatrices[f].second.transpose() * tmp;
+
+        sff[f] = tgtMatrices[f].second.transpose() * tmp/3;
+
     }
     std::vector<Varifold> varifolds;
     for (auto f = 0; f < positions.size(); ++f) {

@@ -8,7 +8,7 @@ int main(int argc, char** argv)
     std::string filename = argc > 1 ? argv[1] : "../DGtalObjects/bunny66.vol";
     double radius = argc > 2 ? std::atof( argv[2] ) : 10.0;
 
-    auto distribType = argc > 3 ? argToDistribType(argv[3]) : DistributionType::Polynomial;
+    auto distribType = argc > 3 ? argToDistribType(argv[3]) : DistributionType::Exponential;
 
     auto binImage = SH3::makeBinaryImage(filename, params);
     auto K = SH3::getKSpace(binImage);
@@ -18,7 +18,7 @@ int main(int argc, char** argv)
     auto polyBunny = registerSurface(primalSurface, "bunny");
 
     for (auto m: {Method::TrivialNormalFaceCentroid, Method::DualNormalVertexPosition, Method::CorrectedNormalFaceCentroid}) {
-        auto varifolds = computeVarifolds(binImage, surface, radius, distribType, m);
+        auto varifolds = computeVarifoldsV2(binImage, surface, radius, distribType, m);
 
         auto nbElements = m == Method::DualNormalVertexPosition ? primalSurface.nbVertices() : primalSurface.nbFaces();
 
@@ -35,18 +35,10 @@ int main(int argc, char** argv)
         const auto lcsNorm = computeSignedNorms(primalSurface, varifolds, m);
 
 
-        auto minmax = std::minmax_element(lcsNorm.begin(), lcsNorm.end());
-        DGtal::trace.info() << "Min: " << *minmax.first << " Max: " << *minmax.second << std::endl;
-        const auto colormap = makeColorMap(*minmax.first, *minmax.second);
-        std::vector<std::vector<double>> colorLcsNorm;
-        for (auto i = 0; i < nbElements; i++) {
-            const auto color = lcsNorm[i] < 0 ? colormap.first(lcsNorm[i]) : colormap.second(lcsNorm[i]);
-            colorLcsNorm.push_back({static_cast<double>(color.red())/255, static_cast<double>(color.green())/255, static_cast<double>(color.blue())/255});
-        }
         if (m == Method::DualNormalVertexPosition) {
-            polyBunny->addVertexColorQuantity(methodToString(m) + " Local Curvatures Norm", colorLcsNorm);
+            polyBunny->addVertexScalarQuantity(methodToString(m) + " Local Curvatures Norm", lcsNorm);
         } else {
-            polyBunny->addFaceColorQuantity(methodToString(m) + " Local Curvatures Norm", colorLcsNorm);
+            polyBunny->addFaceScalarQuantity(methodToString(m) + " Local Curvatures Norm", lcsNorm);
         }
     }
 

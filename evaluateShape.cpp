@@ -146,11 +146,11 @@ int main( int argc, char* argv[] )
         polysurf->addFaceVectorQuantity("Used Normals", face_normals);
     }
 
-    bool v3Enabled = B != 40.0;
+    bool v3Enabled = false;
+    std::vector<Varifold> varifolds = computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params, face_normals);
 
-    std::vector<Varifold> varifolds = v3Enabled
-            ? computeVarifoldsV3(bimage, surface, R, kernel, method, h, 5.0, params, face_normals)
-            : computeVarifoldsV2(bimage, surface, R, kernel, method, h, 5.0, params, face_normals);
+//    bool v3Enabled = true;
+//    std::vector<Varifold> varifolds = computeVarifoldsV3(bimage, surface, R, kernel, method, h, 5.0, params, face_normals);
 
     std::vector< double > H( varifolds.size() );
     std::vector< double > G( varifolds.size() );
@@ -250,10 +250,8 @@ int main( int argc, char* argv[] )
         polysurf->addFaceScalarQuantity("Computed G", G);
         polysurf->addFaceScalarQuantity("True G", exp_G);
         polysurf->addFaceScalarQuantity("Error G Ge-G", error_G);
-    } else {
-        polysurf->addFaceVectorQuantity("Local Curvature", curvatures);
-        polysurf->addFaceVectorQuantity("Used Normals", usedNormals);
     }
+    polysurf->addFaceVectorQuantity("Local Curvature", curvatures);
     polysurf->addFaceScalarQuantity("Computed H", H );
     polysurf->addFaceScalarQuantity("True H", exp_H );
     polysurf->addFaceScalarQuantity("Error H He-H", error_H );
